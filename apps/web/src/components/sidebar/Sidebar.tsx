@@ -1,0 +1,326 @@
+'use client';
+
+import React, { useState } from 'react';
+import { cn } from '@/lib/utils';
+import { useCollectionsStore } from '@/stores/collectionsStore';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
+import {
+  ChevronRight,
+  ChevronDown,
+  Plus,
+  FolderOpen,
+  FileJson,
+  Clock,
+  Settings,
+  Trash2,
+  MoreVertical,
+  Search,
+} from 'lucide-react';
+import type { Collection, Folder, ApiRequest } from '@apiforge/shared';
+import { Dropdown } from '../ui/Dropdown';
+import { Modal } from '../ui/Modal';
+import { Input } from '../ui/Input';
+import { Button } from '../ui/Button';
+
+interface SidebarProps {
+  onSelectRequest: (request: ApiRequest, collectionId?: string, folderId?: string) => void;
+  onSelectHistory: (request: ApiRequest) => void;
+  className?: string;
+}
+
+export const Sidebar: React.FC<SidebarProps> = ({
+  onSelectRequest,
+  onSelectHistory,
+  className,
+}) => {
+  const [activeTab, setActiveTab] = useState<'collections' | 'history' | 'environments'>('collections');
+  const [expandedCollections, setExpandedCollections] = useState<Set<string>>(new Set());
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showNewCollectionModal, setShowNewCollectionModal] = useState(false);
+  const [newCollectionName, setNewCollectionName] = useState('');
+
+  const { collections, addCollection, removeCollection } = useCollectionsStore();
+  const { history } = useCollectionsStore();
+  const { environments, currentEnvironment, setCurrentEnvironment } = useWorkspaceStore();
+
+  const toggleCollection = (id: string) => {
+    const newExpanded = new Set(expandedCollections);
+    if (newExpanded.has(id)) {
+      newExpanded.delete(id);
+    } else {
+      newExpanded.add(id);
+    }
+    setExpandedCollections(newExpanded);
+  };
+
+  const toggleFolder = (id: string) => {
+    const newExpanded = new Set(expandedFolders);
+    if (newExpanded.has(id)) {
+      newExpanded.delete(id);
+    } else {
+      newExpanded.add(id);
+    }
+    setExpandedFolders(newExpanded);
+  };
+
+  const getMethodClass = (method: string) => {
+    return cn('http-method', method.toLowerCase());
+  };
+
+  const handleCreateCollection = () => {
+    if (!newCollectionName.trim()) return;
+    
+    const newCollection: Collection = {
+      _id: `collection:${crypto.randomUUID()}`,
+      type: 'collection',
+      workspaceId: '',
+      name: newCollectionName,
+      variables: [],
+      folders: [],
+      requests: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      createdBy: '',
+    };
+    
+    addCollection(newCollection);
+    setNewCollectionName('');
+    setShowNewCollectionModal(false);
+  };
+
+  const renderFolder = (folder: Folder, collectionId: string, parentFolderId?: string, depth = 0) => {
+    const isExpanded = expandedFolders.has(folder._id);
+    const folderRequests = folder.requests.filter((r) =>
+      r.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      r.url.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+
+    return (
+      <div key={folder._id} style={{ marginLeft: depth * 16 }}>
+        <div
+          className="flex items-center gap-1 px-2 py-1 hover:bg-[#333334] rounded cursor-pointer group"
+          onClick={() => toggleFolder(folder._id)}
+        >
+          <ChevronRight className={cn('w-4 h-4 transition-transform', isExpanded && 'rotate-90')} />
+          <FolderOpen className="w-4 h-4 text-[#d4a574]" />
+          <span className="flex-1 text-sm truncate">{folder.name}</span>
+          <Dropdown
+            trigger={
+              <MoreVertical
+                className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity"
+                onClick={(e) => e.stopPropagation()}
+              />
+            }
+            items={[
+              { id: 'rename', label: 'Rename' },
+              { id: 'delete', label: 'Delete', danger: true },
+            ]}
+          />
+        </div>
+        {isExpanded && (
+          <>
+            {folderRequests.map((request) => (
+              <div
+                key={request._id}
+                className="flex items-center gap-2 px-2 py-1 hover:bg-[#333334] rounded cursor-pointer ml-6"
+                onClick={() => onSelectRequest(request, collectionId, folder._id)}
+              >
+                <span className={getMethodClass(request.method)}>{request.method}</span>
+                <span className="flex-1 text-sm truncate">{request.name}</span>
+              </div>
+            ))}
+            {folder.folders.map((subFolder) => renderFolder(subFolder, collectionId, folder._id, depth + 1))}
+          </>
+        )}
+      </div>
+    );
+  };
+
+  const renderCollection = (collection: Collection) => {
+    const isExpanded = expandedCollections.has(collection._id);
+    const filteredRequests = collection.requests.filter(
+      (r) =>
+        r.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        r.url.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+
+    return (
+      <div key={collection._id}>
+        <div
+          className="flex items-center gap-1 px-2 py-1 hover:bg-[#333334] rounded cursor-pointer group"
+          onClick={() => toggleCollection(collection._id)}
+        >
+          <ChevronRight className={cn('w-4 h-4 transition-transform', isExpanded && 'rotate-90')} />
+          <FolderOpen className="w-4 h-4 text-[#d4a574]" />
+          <span className="flex-1 text-sm truncate">{collection.name}</span>
+          <Dropdown
+            trigger={
+              <MoreVertical
+                className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity"
+                onClick={(e) => e.stopPropagation()}
+              />
+            }
+            items={[
+              { id: 'rename', label: 'Rename' },
+              { id: 'addFolder', label: 'Add Folder' },
+              { id: 'addRequest', label: 'Add Request' },
+              { id: 'export', label: 'Export' },
+              { id: 'delete', label: 'Delete', danger: true },
+            ]}
+          />
+        </div>
+        {isExpanded && (
+          <>
+            {filteredRequests.map((request) => (
+              <div
+                key={request._id}
+                className="flex items-center gap-2 px-2 py-1 hover:bg-[#333334] rounded cursor-pointer ml-6"
+                onClick={() => onSelectRequest(request, collection._id)}
+              >
+                <span className={getMethodClass(request.method)}>{request.method}</span>
+                <span className="flex-1 text-sm truncate">{request.name}</span>
+              </div>
+            ))}
+            {collection.folders.map((folder) => renderFolder(folder, collection._id))}
+          </>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className={cn('flex flex-col h-full bg-[#262627] border-r border-[#3a3a3b]', className)}>
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-[#3a3a3b]">
+        <button
+          onClick={() => setActiveTab('collections')}
+          className={cn(
+            'flex-1 py-1.5 text-xs font-medium rounded transition-colors',
+            activeTab === 'collections' ? 'bg-[#3d3d3e] text-white' : 'text-gray-400 hover:text-white'
+          )}
+        >
+          Collections
+        </button>
+        <button
+          onClick={() => setActiveTab('history')}
+          className={cn(
+            'flex-1 py-1.5 text-xs font-medium rounded transition-colors',
+            activeTab === 'history' ? 'bg-[#3d3d3e] text-white' : 'text-gray-400 hover:text-white'
+          )}
+        >
+          History
+        </button>
+        <button
+          onClick={() => setActiveTab('environments')}
+          className={cn(
+            'flex-1 py-1.5 text-xs font-medium rounded transition-colors',
+            activeTab === 'environments' ? 'bg-[#3d3d3e] text-white' : 'text-gray-400 hover:text-white'
+          )}
+        >
+          Env
+        </button>
+      </div>
+
+      <div className="p-2">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search..."
+            className="w-full pl-9 pr-3 py-1.5 bg-[#1e1e1e] border border-[#3d3d3d] rounded text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-[#ff6b35]"
+          />
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto">
+        {activeTab === 'collections' && (
+          <div className="p-2">
+            <button
+              onClick={() => setShowNewCollectionModal(true)}
+              className="flex items-center gap-2 w-full px-2 py-1.5 text-sm text-gray-400 hover:text-white hover:bg-[#333334] rounded transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              New Collection
+            </button>
+            {collections.map((collection) => renderCollection(collection))}
+          </div>
+        )}
+
+        {activeTab === 'history' && (
+          <div className="p-2">
+            {history.length === 0 ? (
+              <p className="text-center text-gray-500 text-sm py-4">No history yet</p>
+            ) : (
+              history.map((request, index) => (
+                <div
+                  key={`${request._id}-${index}`}
+                  className="flex items-center gap-2 px-2 py-1.5 hover:bg-[#333334] rounded cursor-pointer"
+                  onClick={() => onSelectHistory(request)}
+                >
+                  <Clock className="w-4 h-4 text-gray-500" />
+                  <span className={getMethodClass(request.method)}>{request.method}</span>
+                  <span className="flex-1 text-sm truncate">{request.name || request.url || 'Untitled'}</span>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+
+        {activeTab === 'environments' && (
+          <div className="p-2">
+            {environments.length === 0 ? (
+              <p className="text-center text-gray-500 text-sm py-4">No environments</p>
+            ) : (
+              environments.map((env) => (
+                <div
+                  key={env._id}
+                  className={cn(
+                    'flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer',
+                    currentEnvironment?._id === env._id
+                      ? 'bg-[#3d3d3e] text-white'
+                      : 'hover:bg-[#333334] text-gray-300'
+                  )}
+                  onClick={() => setCurrentEnvironment(env)}
+                >
+                  <FileJson className="w-4 h-4 text-green-500" />
+                  <span className="text-sm">{env.name}</span>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="p-2 border-t border-[#3a3a3b]">
+        <button className="flex items-center gap-2 w-full px-2 py-1.5 text-sm text-gray-400 hover:text-white hover:bg-[#333334] rounded transition-colors">
+          <Settings className="w-4 h-4" />
+          Settings
+        </button>
+      </div>
+
+      <Modal
+        isOpen={showNewCollectionModal}
+        onClose={() => setShowNewCollectionModal(false)}
+        title="New Collection"
+      >
+        <div className="space-y-4">
+          <Input
+            label="Collection Name"
+            value={newCollectionName}
+            onChange={(e) => setNewCollectionName(e.target.value)}
+            placeholder="My Collection"
+            autoFocus
+          />
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setShowNewCollectionModal(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleCreateCollection}>Create</Button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+};

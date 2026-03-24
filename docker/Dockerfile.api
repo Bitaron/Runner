@@ -1,0 +1,38 @@
+FROM node:20-alpine AS base
+
+FROM base AS deps
+WORKDIR /app
+
+COPY package*.json ./
+COPY packages/shared/package*.json ./packages/shared/
+COPY apps/api/package*.json ./apps/api/
+
+RUN npm ci --workspace=@apiforge/shared --workspace=@apiforge/api
+
+FROM base AS builder
+WORKDIR /app
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+
+RUN npm run build --workspace=@apiforge/shared
+RUN npm run build --workspace=@apiforge/api
+
+FROM base AS runner
+WORKDIR /app
+
+ENV NODE_ENV=production
+
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 api
+
+COPY --from=builder /app/apps/api/dist ./dist
+COPY --from=builder /app/apps/api/uploads ./uploads
+
+USER api
+
+EXPOSE 4000
+
+ENV PORT=4000
+
+CMD ["node", "dist/index.js"]
