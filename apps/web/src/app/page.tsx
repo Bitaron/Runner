@@ -42,23 +42,39 @@ function LoadingSpinner() {
 
 export default function Home() {
   const router = useRouter();
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  const hasHydrated = useAuthStore((s) => s.hasHydrated);
-  const [mounted, setMounted] = useState(false);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
+    // Wait a bit for client-side hydration
+    const timer = setTimeout(() => {
+      setReady(true);
+    }, 100);
+    return () => clearTimeout(timer);
   }, []);
 
   useEffect(() => {
-    if (mounted && hasHydrated) {
-      if (isAuthenticated) {
-        router.push('/workspace');
-      } else {
-        router.push('/login');
+    if (!ready) return;
+
+    // Check localStorage directly for auth state
+    const stored = localStorage.getItem('apiforge-auth');
+    let isAuthenticated = false;
+    
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        isAuthenticated = parsed.state?.isAuthenticated === true;
+      } catch (e) {
+        // ignore parse errors
       }
     }
-  }, [mounted, hasHydrated, isAuthenticated, router]);
+
+    // Navigate based on auth state
+    if (isAuthenticated) {
+      router.push('/workspace');
+    } else {
+      router.push('/login');
+    }
+  }, [ready, router]);
 
   return <LoadingSpinner />;
 }
