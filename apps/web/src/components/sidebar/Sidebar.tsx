@@ -28,6 +28,8 @@ import { Button } from '../ui/Button';
 interface SidebarProps {
   onSelectRequest: (request: ApiRequest, collectionId?: string, folderId?: string) => void;
   onSelectHistory: (request: ApiRequest) => void;
+  onSelectCollection?: (collection: Collection) => void;
+  onSelectFolder?: (collection: Collection, folder: Folder) => void;
   className?: string;
   onImport?: () => void;
   onNewCollection?: () => void;
@@ -36,6 +38,8 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({
   onSelectRequest,
   onSelectHistory,
+  onSelectCollection,
+  onSelectFolder,
   className,
   onImport,
   onNewCollection,
@@ -103,7 +107,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     setShowNewCollectionModal(false);
   };
 
-  const renderFolder = (folder: Folder, collectionId: string, parentFolderId?: string, depth = 0) => {
+  const renderFolder = (folder: Folder, collection: Collection, parentFolderId?: string, depth = 0) => {
     const isExpanded = expandedFolders.has(folder._id);
     const folderRequests = folder.requests.filter((r) =>
       r.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -114,11 +118,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div key={folder._id} style={{ marginLeft: depth * 16 }}>
         <div
           className="flex items-center gap-1 px-2 py-1 hover:bg-[#333334] rounded cursor-pointer group"
-          onClick={() => toggleFolder(folder._id)}
         >
-          <ChevronRight className={cn('w-4 h-4 transition-transform', isExpanded && 'rotate-90')} />
+          <ChevronRight 
+            className={cn('w-4 h-4 transition-transform', isExpanded && 'rotate-90')} 
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleFolder(folder._id);
+            }}
+          />
           <FolderOpen className="w-4 h-4 text-[#d4a574]" />
-          <span className="flex-1 text-sm truncate">{folder.name}</span>
+          <span 
+            className="flex-1 text-sm truncate hover:text-[#ff6b35] transition-colors"
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelectFolder?.(collection, folder);
+            }}
+          >
+            {folder.name}
+          </span>
           <Dropdown
             trigger={
               <MoreVertical
@@ -144,7 +161,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <span className="flex-1 text-sm truncate">{request.name}</span>
               </div>
             ))}
-            {folder.folders.map((subFolder) => renderFolder(subFolder, collectionId, folder._id, depth + 1))}
+            {folder.folders.map((subFolder) => renderFolder(subFolder, collection, folder._id, depth + 1))}
           </>
         )}
       </div>
@@ -163,11 +180,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div key={collection._id}>
         <div
           className="flex items-center gap-1 px-2 py-1 hover:bg-[#333334] rounded cursor-pointer group"
-          onClick={() => toggleCollection(collection._id)}
         >
-          <ChevronRight className={cn('w-4 h-4 transition-transform', isExpanded && 'rotate-90')} />
+          <ChevronRight 
+            className={cn('w-4 h-4 transition-transform', isExpanded && 'rotate-90')} 
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleCollection(collection._id);
+            }}
+          />
           <FolderOpen className="w-4 h-4 text-[#d4a574]" />
-          <span className="flex-1 text-sm truncate">{collection.name}</span>
+          <span 
+            className="flex-1 text-sm truncate hover:text-[#ff6b35] transition-colors"
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelectCollection?.(collection);
+            }}
+          >
+            {collection.name}
+          </span>
           <Dropdown
             trigger={
               <MoreVertical
@@ -196,7 +226,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <span className="flex-1 text-sm truncate">{request.name}</span>
               </div>
             ))}
-            {collection.folders.map((folder) => renderFolder(folder, collection._id))}
+            {collection.folders.map((folder) => renderFolder(folder, collection))}
           </>
         )}
       </div>

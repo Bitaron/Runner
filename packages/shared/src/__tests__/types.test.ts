@@ -41,7 +41,7 @@ describe('Shared Types', () => {
   });
 
   describe('AuthType', () => {
-    const validAuthTypes: AuthType[] = ['none', 'bearer', 'basic', 'apikey', 'oauth1', 'oauth2', 'hawk', 'awsv4'];
+    const validAuthTypes: AuthType[] = ['none', 'bearer', 'basic', 'apikey', 'oauth1', 'oauth2', 'hawk', 'awsv4', 'digest', 'ntlm', 'akamai'];
 
     it('should accept valid auth types', () => {
       validAuthTypes.forEach((type) => {

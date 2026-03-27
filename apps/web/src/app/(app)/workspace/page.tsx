@@ -12,13 +12,14 @@ import { TopBar } from '@/components/layout/TopBar';
 import { RequestTabs } from '@/components/layout/RequestTabs';
 import { BottomBar } from '@/components/layout/BottomBar';
 import { HelpModal } from '@/components/layout/HelpModal';
+import { CollectionPanel } from '@/components/collection';
 import { useCollectionsStore } from '@/stores/collectionsStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAuthStore } from '@/stores/authStore';
 import { apiClient } from '@/lib/api';
 import { syncManager } from '@/lib/syncManager';
 import { cn } from '@/lib/utils';
-import type { ApiRequest, Collection, Response, Workspace } from '@apiforge/shared';
+import type { ApiRequest, Collection, Response, Workspace, Folder } from '@apiforge/shared';
 import { v4 as uuidv4 } from 'uuid';
 
 interface RequestTab {
@@ -39,6 +40,8 @@ export default function WorkspacePage() {
   const [showWebSocket, setShowWebSocket] = useState(false);
   const [activePanel, setActivePanel] = useState<'http' | 'websocket'>('http');
   const [layout, setLayout] = useState<'horizontal' | 'vertical'>('vertical');
+  const [selectedCollection, setSelectedCollection] = useState<Collection | null>(null);
+  const [selectedFolder, setSelectedFolder] = useState<Folder | null>(null);
 
   const { collections, addCollection, addRequest, updateRequest, addToHistory, createNewRequest } = useCollectionsStore();
   const { currentWorkspace, workspaces, setWorkspaces, setCurrentWorkspace } = useWorkspaceStore();
@@ -401,6 +404,14 @@ export default function WorkspacePage() {
       <Sidebar
         onSelectRequest={handleSelectRequest}
         onSelectHistory={handleSelectHistory}
+        onSelectCollection={(collection) => {
+          setSelectedCollection(collection);
+          setSelectedFolder(null);
+        }}
+        onSelectFolder={(collection, folder) => {
+          setSelectedCollection(collection);
+          setSelectedFolder(folder);
+        }}
         className="w-72 flex-shrink-0"
       />
 
@@ -491,6 +502,29 @@ export default function WorkspacePage() {
           onConsoleOpen={() => {}}
         />
       </div>
+
+      {selectedCollection && (
+        <div className="w-[500px] border-l border-[#3d3d3d]">
+          <CollectionPanel
+            collection={selectedCollection}
+            folder={selectedFolder || undefined}
+            onClose={() => {
+              setSelectedCollection(null);
+              setSelectedFolder(null);
+            }}
+            onUpdateCollection={(updates) => {
+              useCollectionsStore.getState().updateCollection(selectedCollection._id, updates);
+              setSelectedCollection({ ...selectedCollection, ...updates });
+            }}
+            onUpdateFolder={(folderId, updates) => {
+              useCollectionsStore.getState().updateFolder(selectedCollection._id, folderId, updates);
+              if (selectedFolder && selectedFolder._id === folderId) {
+                setSelectedFolder({ ...selectedFolder, ...updates });
+              }
+            }}
+          />
+        </div>
+      )}
 
       <TeamManagement
         isOpen={showTeamModal}

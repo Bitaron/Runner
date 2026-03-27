@@ -2,7 +2,7 @@ export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 
 
 export type RequestBodyMode = 'none' | 'formdata' | 'urlencoded' | 'raw' | 'binary' | 'graphql';
 
-export type AuthType = 'none' | 'bearer' | 'basic' | 'apikey' | 'oauth1' | 'oauth2' | 'hawk' | 'awsv4';
+export type AuthType = 'none' | 'bearer' | 'basic' | 'apikey' | 'oauth1' | 'oauth2' | 'hawk' | 'awsv4' | 'digest' | 'ntlm' | 'akamai';
 
 export type RawBodyType = 'json' | 'xml' | 'html' | 'text';
 
@@ -70,8 +70,36 @@ export interface AWSV4Config {
   region?: string;
 }
 
+export interface DigestConfig {
+  username: string;
+  password: string;
+  realm?: string;
+  nonce?: string;
+  uri?: string;
+  qop?: string;
+  nc?: string;
+  cnonce?: string;
+  response?: string;
+  opaque?: string;
+}
+
+export interface NTLMConfig {
+  username: string;
+  password: string;
+  domain?: string;
+  workstation?: string;
+}
+
+export interface AkamaiConfig {
+  clientSecret: string;
+  clientToken: string;
+  accessToken: string;
+  host?: string;
+}
+
 export interface AuthConfig {
   type: AuthType;
+  inheritFromParent?: boolean;
   bearer?: {
     token: string;
     prefix?: string;
@@ -89,6 +117,9 @@ export interface AuthConfig {
   oauth2?: OAuth2Config;
   hawk?: HawkConfig;
   awsv4?: AWSV4Config;
+  digest?: DigestConfig;
+  ntlm?: NTLMConfig;
+  akamai?: AkamaiConfig;
 }
 
 export interface Cookie {
@@ -138,10 +169,14 @@ export interface Folder {
   name: string;
   description?: string;
   variables: Variable[];
+  auth?: AuthConfig;
   preRequestScript?: string;
   testScript?: string;
   requests: ApiRequest[];
   folders: Folder[];
+  createdAt?: string;
+  updatedAt?: string;
+  createdBy?: string;
 }
 
 export interface Collection {
