@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, StateStorage } from 'zustand/middleware';
 import type { User, AuthTokens } from '@apiforge/shared';
 
 interface AuthState {
@@ -7,11 +7,13 @@ interface AuthState {
   tokens: AuthTokens | null;
   isAuthenticated: boolean;
   isAnonymous: boolean;
+  hasHydrated: boolean;
   setAuth: (user: User, tokens: AuthTokens) => void;
   setAnonymous: (user: User) => void;
   updateUser: (user: Partial<User>) => void;
   logout: () => void;
   clearAuth: () => void;
+  setHasHydrated: (state: boolean) => void;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -21,6 +23,7 @@ export const useAuthStore = create<AuthState>()(
       tokens: null,
       isAuthenticated: false,
       isAnonymous: false,
+      hasHydrated: false,
       
       setAuth: (user, tokens) => set({ 
         user, 
@@ -35,6 +38,8 @@ export const useAuthStore = create<AuthState>()(
         isAuthenticated: true, 
         isAnonymous: true 
       }),
+
+      setHasHydrated: (state) => set({ hasHydrated: state }),
       
       updateUser: (updates) => set((state) => ({
         user: state.user ? { ...state.user, ...updates } : null
@@ -56,6 +61,9 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: 'apiforge-auth',
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated(true);
+      },
     }
   )
 );

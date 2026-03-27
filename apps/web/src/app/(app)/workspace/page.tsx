@@ -48,7 +48,9 @@ export default function WorkspacePage() {
   const [sidebarWidth, setSidebarWidth] = useState(280);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [splitPosition, setSplitPosition] = useState(50);
+  const [verticalSplitPosition, setVerticalSplitPosition] = useState(50);
   const [isDragging, setIsDragging] = useState(false);
+  const [isDraggingVertical, setIsDraggingVertical] = useState(false);
 
   const { collections, addCollection, addRequest, updateRequest, addToHistory, createNewRequest } = useCollectionsStore();
   const { currentWorkspace, workspaces, setWorkspaces, setCurrentWorkspace, environments, globalVariables, addEnvironment, updateEnvironment, removeEnvironment } = useWorkspaceStore();
@@ -493,7 +495,10 @@ export default function WorkspacePage() {
             </>
           ) : (
             <>
-              <div className="h-1/2 border-b border-[#3d3d3d] overflow-y-auto">
+              <div 
+                className="absolute inset-0 overflow-y-auto border-b border-[#3d3d3d]"
+                style={{ height: `${verticalSplitPosition}%` }}
+              >
                 {activePanel === 'http' ? (
                   <RequestBuilder
                     request={currentRequest}
@@ -505,7 +510,15 @@ export default function WorkspacePage() {
                   <WebSocketRequest />
                 )}
               </div>
-              <div className="h-1/2 overflow-y-auto">
+              <div
+                className="absolute left-0 right-0 h-1 bg-[#3d3d3d] hover:bg-[#ff6b35] cursor-row-resize z-10"
+                style={{ top: `${verticalSplitPosition}%` }}
+                onMouseDown={() => setIsDraggingVertical(true)}
+              />
+              <div 
+                className="absolute inset-0 overflow-y-auto"
+                style={{ top: `${verticalSplitPosition}%` }}
+              >
                 {activePanel === 'http' ? (
                   <ResponseViewer
                     response={response}
