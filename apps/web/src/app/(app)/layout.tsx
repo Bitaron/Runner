@@ -19,7 +19,11 @@ export default function AppLayout({
   }, [isAuthenticated, router]);
 
   if (!isAuthenticated) {
-    return null;
+    return (
+      <div className="min-h-screen bg-[#1e1e1e] flex items-center justify-center">
+        <div className="text-gray-400">Loading...</div>
+      </div>
+    );
   }
 
   return (
