@@ -45,6 +45,8 @@ export default function WorkspacePage() {
   const [selectedFolder, setSelectedFolder] = useState<Folder | null>(null);
   const [selectedEnvironment, setSelectedEnvironment] = useState<Environment | null>(null);
   const [showGlobals, setShowGlobals] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(280);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const { collections, addCollection, addRequest, updateRequest, addToHistory, createNewRequest } = useCollectionsStore();
   const { currentWorkspace, workspaces, setWorkspaces, setCurrentWorkspace, environments, globalVariables, addEnvironment, updateEnvironment, removeEnvironment } = useWorkspaceStore();
@@ -423,7 +425,10 @@ export default function WorkspacePage() {
           setSelectedEnvironment(null);
           setShowGlobals(true);
         }}
-        className="w-72 flex-shrink-0"
+        width={sidebarWidth}
+        onWidthChange={setSidebarWidth}
+        isCollapsed={sidebarCollapsed}
+        onCollapseChange={setSidebarCollapsed}
       />
 
       <div className="flex-1 flex flex-col overflow-hidden">
