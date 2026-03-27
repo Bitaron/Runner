@@ -47,6 +47,8 @@ export default function WorkspacePage() {
   const [showGlobals, setShowGlobals] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(280);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [splitPosition, setSplitPosition] = useState(50);
+  const [isDragging, setIsDragging] = useState(false);
 
   const { collections, addCollection, addRequest, updateRequest, addToHistory, createNewRequest } = useCollectionsStore();
   const { currentWorkspace, workspaces, setWorkspaces, setCurrentWorkspace, environments, globalVariables, addEnvironment, updateEnvironment, removeEnvironment } = useWorkspaceStore();
@@ -450,13 +452,16 @@ export default function WorkspacePage() {
           />
         )}
 
-        <div className={cn(
-          "flex-1 overflow-hidden",
-          layout === 'horizontal' ? "grid grid-cols-2" : "flex flex-col"
-        )}>
+        <div className="flex-1 overflow-hidden relative" onMouseMove={(e) => {
+          if (isDragging) {
+            const container = e.currentTarget.getBoundingClientRect();
+            const newPosition = ((e.clientX - container.left) / container.width) * 100;
+            setSplitPosition(Math.max(20, Math.min(80, newPosition)));
+          }
+        }} onMouseUp={() => setIsDragging(false)} onMouseLeave={() => setIsDragging(false)}>
           {layout === 'horizontal' ? (
             <>
-              <div className="border-r border-[#3d3d3d] overflow-y-auto">
+              <div className="absolute inset-0 overflow-y-auto" style={{ width: `${splitPosition}%` }}>
                 {activePanel === 'http' ? (
                   <RequestBuilder
                     request={currentRequest}
@@ -468,7 +473,12 @@ export default function WorkspacePage() {
                   <WebSocketRequest />
                 )}
               </div>
-              <div className="overflow-y-auto">
+              <div
+                className="absolute top-0 bottom-0 w-1 bg-[#3d3d3d] hover:bg-[#ff6b35] cursor-col-resize z-10"
+                style={{ left: `${splitPosition}%` }}
+                onMouseDown={() => setIsDragging(true)}
+              />
+              <div className="absolute inset-0 overflow-y-auto" style={{ left: `${splitPosition}%` }}>
                 {activePanel === 'http' ? (
                   <ResponseViewer
                     response={response}

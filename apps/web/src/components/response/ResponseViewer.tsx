@@ -28,6 +28,7 @@ export const ResponseViewer: React.FC<ResponseViewerProps> = ({
     { id: 'body', label: 'Body' },
     { id: 'headers', label: 'Headers' },
     { id: 'cookies', label: 'Cookies' },
+    { id: 'visualize', label: 'Visualize' },
     { id: 'tests', label: 'Tests' },
   ];
 
@@ -286,6 +287,32 @@ export const ResponseViewer: React.FC<ResponseViewerProps> = ({
                 </tbody>
               </table>
             )}
+          </TabPanel>
+        )}
+
+        {activeTab === 'visualize' && (
+          <TabPanel>
+            <div className="p-4">
+              <p className="text-gray-400 text-sm mb-4">Visualize your response data in different formats</p>
+              <div className="grid grid-cols-2 gap-4">
+                <button className="p-4 bg-[#1e1e1e] rounded-lg border border-[#3d3d3d] hover:border-[#ff6b35] transition-colors text-left">
+                  <h4 className="text-white font-medium mb-2">JSON Tree</h4>
+                  <p className="text-gray-500 text-sm">View response as interactive JSON tree</p>
+                </button>
+                <button className="p-4 bg-[#1e1e1e] rounded-lg border border-[#3d3d3d] hover:border-[#ff6b35] transition-colors text-left">
+                  <h4 className="text-white font-medium mb-2">Table View</h4>
+                  <p className="text-gray-500 text-sm">Convert JSON array to table</p>
+                </button>
+                <button className="p-4 bg-[#1e1e1e] rounded-lg border border-[#3d3d3d] hover:border-[#ff6b35] transition-colors text-left">
+                  <h4 className="text-white font-medium mb-2">Chart</h4>
+                  <p className="text-gray-500 text-sm">Visualize data as bar/line chart</p>
+                </button>
+                <button className="p-4 bg-[#1e1e1e] rounded-lg border border-[#3d3d3d] hover:border-[#ff6b35] transition-colors text-left">
+                  <h4 className="text-white font-medium mb-2">HTML Preview</h4>
+                  <p className="text-gray-500 text-sm">Render HTML response in frame</p>
+                </button>
+              </div>
+            </div>
           </TabPanel>
         )}
 

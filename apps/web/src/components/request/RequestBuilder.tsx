@@ -10,7 +10,7 @@ import { Select } from '../ui/Select';
 import { Button } from '../ui/Button';
 import { KeyValueEditor } from '../ui/KeyValueEditor';
 import { Send, Code, Loader2, Settings, ChevronRight, Save, MoreHorizontal } from 'lucide-react';
-import type { ApiRequest, HttpMethod, RequestBodyMode, RequestBody, AuthConfig, AuthType, RawBodyType } from '@apiforge/shared';
+import type { ApiRequest, HttpMethod, RequestBodyMode, RequestBody, AuthConfig, AuthType, RawBodyType, Variable } from '@apiforge/shared';
 import { CodeGenModal } from './CodeGenModal';
 import { Dropdown } from '../ui/Dropdown';
 import { VariableHighlighter } from '../environment/VariableTooltip';
@@ -176,7 +176,7 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
             <div className="absolute left-0 top-full mt-1 w-full">
               <VariableHighlighter
                 text={request.url}
-                variables={getVariablesForHighlighter()}
+              variables={getVariablesForHighlighter().map(v => ({ key: v.key, value: v.value, scope: v.scope }))}
               />
             </div>
           )}
@@ -207,6 +207,7 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
               keyPlaceholder="Parameter"
               valuePlaceholder="Value"
               showDescription={false}
+              variables={getVariablesForHighlighter().map(v => ({ key: v.key, value: v.value, type: 'default' as const, enabled: true }))}
             />
           </TabPanel>
         )}
@@ -218,6 +219,7 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
               onChange={(items) => handleKeyValueChange('headers', items)}
               keyPlaceholder="Header"
               valuePlaceholder="Value"
+              variables={getVariablesForHighlighter().map(v => ({ key: v.key, value: v.value, type: 'default' as const, enabled: true }))}
             />
           </TabPanel>
         )}
