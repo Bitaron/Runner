@@ -26,23 +26,35 @@ export const Logo: React.FC<LogoProps> = ({ size = 'md', className = '' }) => {
       className={className}
       xmlns="http://www.w3.org/2000/svg"
     >
-      {/* Background circle */}
-      <circle cx="32" cy="32" r="30" fill="#1e1e1e" stroke="#ff6b35" strokeWidth="2"/>
+      {/* Background gradient */}
+      <defs>
+        <linearGradient id="runnerGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#ff6b35" />
+          <stop offset="100%" stopColor="#ff8c5a" />
+        </linearGradient>
+        <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#2d2d2d" />
+          <stop offset="100%" stopColor="#1e1e1e" />
+        </linearGradient>
+      </defs>
       
-      {/* Runner figure - stylized R */}
+      {/* Rounded square background */}
+      <rect x="4" y="4" width="56" height="56" rx="12" fill="url(#bgGradient)" />
+      
+      {/* Runner arrow / fast motion R */}
       <path
-        d="M20 44V20h8l8 12 8-12h8v24h-6V26l-8 12h-6l-8-12v18h-6z"
-        fill="#ff6b35"
+        d="M18 42L18 22L30 22L30 26L22 26L22 30L28 30L28 34L22 34L22 42L18 42Z"
+        fill="url(#runnerGradient)"
       />
       
-      {/* Motion lines */}
-      <path
-        d="M14 28h4M14 32h6M14 36h4"
-        stroke="#ff6b35"
-        strokeWidth="2"
-        strokeLinecap="round"
-        opacity="0.6"
-      />
+      {/* Speed lines */}
+      <path d="M36 24L44 24" stroke="#ff6b35" strokeWidth="2.5" strokeLinecap="round" />
+      <path d="M36 30L48 30" stroke="#ff6b35" strokeWidth="2.5" strokeLinecap="round" />
+      <path d="M36 36L44 36" stroke="#ff6b35" strokeWidth="2.5" strokeLinecap="round" />
+      
+      {/* Arrow indicator */}
+      <path d="M44 42L50 48L44 48L44 42Z" fill="url(#runnerGradient)" />
+      <path d="M48 42L50 44L48 46" stroke="url(#runnerGradient)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
     </svg>
   );
 };
@@ -77,18 +89,22 @@ export const LogoWithText: React.FC<LogoWithTextProps> = ({ size = 'md', classNa
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
       >
-        <circle cx="32" cy="32" r="30" fill="#1e1e1e" stroke="#ff6b35" strokeWidth="2"/>
-        <path
-          d="M20 44V20h8l8 12 8-12h8v24h-6V26l-8 12h-6l-8-12v18h-6z"
-          fill="#ff6b35"
-        />
-        <path
-          d="M14 28h4M14 32h6M14 36h4"
-          stroke="#ff6b35"
-          strokeWidth="2"
-          strokeLinecap="round"
-          opacity="0.6"
-        />
+        <defs>
+          <linearGradient id="runnerGradientSm" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#ff6b35" />
+            <stop offset="100%" stopColor="#ff8c5a" />
+          </linearGradient>
+          <linearGradient id="bgGradientSm" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#2d2d2d" />
+            <stop offset="100%" stopColor="#1e1e1e" />
+          </linearGradient>
+        </defs>
+        <rect x="4" y="4" width="56" height="56" rx="12" fill="url(#bgGradientSm)" />
+        <path d="M18 42L18 22L30 22L30 26L22 26L22 30L28 30L28 34L22 34L22 42L18 42Z" fill="url(#runnerGradientSm)" />
+        <path d="M36 24L44 24" stroke="#ff6b35" strokeWidth="2.5" strokeLinecap="round" />
+        <path d="M36 30L48 30" stroke="#ff6b35" strokeWidth="2.5" strokeLinecap="round" />
+        <path d="M36 36L44 36" stroke="#ff6b35" strokeWidth="2.5" strokeLinecap="round" />
+        <path d="M44 42L50 48L44 48L44 42Z" fill="url(#runnerGradientSm)" />
       </svg>
       <span className={`${ts} font-bold text-white tracking-wider`}>RUNNER</span>
     </div>
