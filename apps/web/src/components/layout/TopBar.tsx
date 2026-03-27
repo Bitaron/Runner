@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   Menu, 
   ChevronLeft, 
@@ -12,7 +12,9 @@ import {
   Bell, 
   ChevronDown,
   Plus,
-  Zap
+  Zap,
+  LogOut,
+  User
 } from 'lucide-react';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAuthStore } from '@/stores/authStore';
@@ -32,8 +34,20 @@ export const TopBar: React.FC<TopBarProps> = ({
   onNewRequest,
 }) => {
   const [showWorkspaces, setShowWorkspaces] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
   const { currentWorkspace, workspaces, setCurrentWorkspace } = useWorkspaceStore();
-  const { user, logout } = useAuthStore();
+  const { user, logout, isAnonymous } = useAuthStore();
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+        setShowUserMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const handleWorkspaceSelect = (workspace: typeof currentWorkspace) => {
     if (workspace) {
@@ -132,10 +146,41 @@ export const TopBar: React.FC<TopBarProps> = ({
             Upgrade
           </button>
           <div className="flex items-center gap-2 ml-2 border-l border-[#3d3d3d] pl-2">
-            <div className="flex items-center gap-2 text-sm text-gray-400">
-              <div className="w-6 h-6 rounded-full bg-[#ff6b35] flex items-center justify-center text-white text-xs font-medium">
-                {user?.name?.[0] || 'U'}
-              </div>
+            <div className="relative" ref={userMenuRef}>
+              <button 
+                onClick={() => setShowUserMenu(!showUserMenu)}
+                className="flex items-center gap-2 text-sm text-gray-400 hover:text-white hover:bg-[#3d3d3d] rounded transition-colors p-1"
+              >
+                <div className="w-6 h-6 rounded-full bg-[#ff6b35] flex items-center justify-center text-white text-xs font-medium">
+                  {user?.name?.[0] || 'U'}
+                </div>
+                <ChevronDown className="w-3 h-3" />
+              </button>
+              {showUserMenu && (
+                <div className="absolute top-full right-0 mt-1 w-56 bg-[#2d2d2e] border border-[#3d3d3d] rounded-lg shadow-xl z-50">
+                  <div className="px-3 py-2 border-b border-[#3d3d3d]">
+                    <p className="text-sm text-white font-medium">{user?.name || 'User'}</p>
+                    <p className="text-xs text-gray-500">{user?.email || 'Anonymous'}</p>
+                    {isAnonymous && (
+                      <span className="inline-block mt-1 px-2 py-0.5 text-xs bg-[#ff6b35]/20 text-[#ff6b35] rounded">Anonymous</span>
+                    )}
+                  </div>
+                  <button className="w-full px-3 py-2 text-sm text-left text-gray-300 hover:bg-[#3d3d3d] flex items-center gap-2 transition-colors">
+                    <User className="w-4 h-4" />
+                    Profile Settings
+                  </button>
+                  <button 
+                    onClick={() => {
+                      logout();
+                      window.location.href = '/login';
+                    }}
+                    className="w-full px-3 py-2 text-sm text-left text-gray-300 hover:bg-[#3d3d3d] flex items-center gap-2 transition-colors border-t border-[#3d3d3d]"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    Sign Out
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
