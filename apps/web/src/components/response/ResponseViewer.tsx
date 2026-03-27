@@ -28,7 +28,6 @@ export const ResponseViewer: React.FC<ResponseViewerProps> = ({
     { id: 'body', label: 'Body' },
     { id: 'headers', label: 'Headers' },
     { id: 'cookies', label: 'Cookies' },
-    { id: 'console', label: 'Console' },
     { id: 'tests', label: 'Tests' },
   ];
 
@@ -286,25 +285,6 @@ export const ResponseViewer: React.FC<ResponseViewerProps> = ({
                   ))}
                 </tbody>
               </table>
-            )}
-          </TabPanel>
-        )}
-
-        {activeTab === 'console' && (
-          <TabPanel>
-            {consoleLogs.length === 0 ? (
-              <p className="text-gray-500 text-sm">No console output</p>
-            ) : (
-              <div className="space-y-1">
-                {consoleLogs.map((log, index) => (
-                  <div
-                    key={index}
-                    className="p-2 bg-[#1e1e1e] rounded font-mono text-sm text-gray-300"
-                  >
-                    {log}
-                  </div>
-                ))}
-              </div>
             )}
           </TabPanel>
         )}

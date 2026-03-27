@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { apiClient } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import type { User } from '@apiforge/shared';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -25,7 +26,8 @@ export default function LoginPage() {
       const response = await apiClient.post('/api/auth/login', { email, password });
 
       if (response.success && response.data) {
-        setAuth(response.data.user, response.data);
+        const data = response.data as { user: User; accessToken: string; refreshToken?: string };
+        setAuth(data.user, data);
         router.push('/workspace');
       } else {
         setError(response.error || 'Login failed');
@@ -45,7 +47,8 @@ export default function LoginPage() {
       const response = await apiClient.post('/api/auth/anonymous');
 
       if (response.success && response.data) {
-        setAuth(response.data.user, response.data);
+        const data = response.data as { user: User; anonymousToken: string };
+        setAuth(data.user, data);
         router.push('/workspace');
       } else {
         setError(response.error || 'Anonymous login failed');

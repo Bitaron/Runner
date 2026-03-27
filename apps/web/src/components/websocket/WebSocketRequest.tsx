@@ -7,7 +7,13 @@ import { Button } from '@/components/ui/Button';
 import { Tabs, TabPanel } from '@/components/ui/Tabs';
 import { KeyValueEditor } from '@/components/ui/KeyValueEditor';
 import { Send, Wifi, WifiOff, Trash2, Clock, Loader2 } from 'lucide-react';
-import type { KeyValue, WebSocketMessage } from '@apiforge/shared';
+import type { KeyValue } from '@apiforge/shared';
+
+interface WebSocketMessage {
+  type: 'sent' | 'received' | 'message' | 'ping' | 'pong' | 'close';
+  data?: string;
+  timestamp: number;
+}
 
 interface WebSocketRequestProps {
   initialUrl?: string;

@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { apiClient } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import type { User } from '@apiforge/shared';
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -42,7 +43,8 @@ export default function RegisterPage() {
       });
 
       if (response.success && response.data) {
-        setAuth(response.data.user, response.data);
+        const data = response.data as { user: User; accessToken: string; refreshToken?: string };
+        setAuth(data.user, data);
         router.push('/workspace');
       } else {
         setError(response.error || 'Registration failed');

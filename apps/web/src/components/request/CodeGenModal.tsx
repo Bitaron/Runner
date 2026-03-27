@@ -7,7 +7,7 @@ import { Select } from '../ui/Select';
 import { Button } from '../ui/Button';
 import { Copy, Check } from 'lucide-react';
 import { SUPPORTED_CODE_LANGUAGES, type CodeGenLanguage } from '@apiforge/shared';
-import type { ApiRequest, HttpMethod, RequestBodyMode } from '@apiforge/shared';
+import type { ApiRequest, HttpMethod, RequestBodyMode, RequestBody } from '@apiforge/shared';
 
 interface CodeGenModalProps {
   isOpen: boolean;

@@ -16,9 +16,11 @@ export interface PaginatedResponse<T> {
 }
 
 export interface AuthTokens {
-  accessToken: string;
-  refreshToken: string;
-  expiresIn: number;
+  accessToken?: string;
+  refreshToken?: string;
+  expiresIn?: number;
+  anonymousToken?: string;
+  isAnonymous?: boolean;
 }
 
 export interface LoginRequest {

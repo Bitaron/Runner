@@ -9,9 +9,10 @@ import { Input } from '../ui/Input';
 import { Select } from '../ui/Select';
 import { Button } from '../ui/Button';
 import { KeyValueEditor } from '../ui/KeyValueEditor';
-import { Send, Code, Loader2, Settings } from 'lucide-react';
-import type { ApiRequest, HttpMethod, RequestBodyMode, AuthConfig, AuthType } from '@apiforge/shared';
+import { Send, Code, Loader2, Settings, ChevronRight, Save, MoreHorizontal } from 'lucide-react';
+import type { ApiRequest, HttpMethod, RequestBodyMode, RequestBody, AuthConfig, AuthType, RawBodyType } from '@apiforge/shared';
 import { CodeGenModal } from './CodeGenModal';
+import { Dropdown } from '../ui/Dropdown';
 
 const HTTP_METHODS: { value: HttpMethod; label: string }[] = [
   { value: 'GET', label: 'GET' },
@@ -91,8 +92,7 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
     handleChange('body', body);
   };
 
-  const handleBodyContentChange = (content: unknown) => {
-    const mode = request.body.mode;
+  const handleBodyContentChange = (content: Partial<RequestBody>) => {
     const body = { ...request.body, ...content };
     handleChange('body', body);
   };
@@ -107,6 +107,38 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
 
   return (
     <div className="flex flex-col h-full">
+      {/* Breadcrumb and save */}
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-[#3d3d3d]">
+        {request.collectionId && (
+          <div className="flex items-center gap-1 text-sm text-gray-400">
+            <span className="hover:text-[#ff6b35] cursor-pointer">Collections</span>
+            <ChevronRight className="w-4 h-4" />
+            <span className="hover:text-[#ff6b35] cursor-pointer truncate max-w-[100px]">{request.collectionId}</span>
+            <ChevronRight className="w-4 h-4" />
+            <span className="text-gray-200 truncate max-w-[100px]">{request.name}</span>
+          </div>
+        )}
+        <div className="ml-auto flex items-center gap-1">
+          <Dropdown
+            trigger={
+              <Button variant="secondary" size="sm" className="gap-1">
+                <Save className="w-3.5 h-3.5" />
+                Save
+              </Button>
+            }
+            items={[
+              { id: 'save', label: 'Save' },
+              { id: 'saveAs', label: 'Save As' },
+              { id: 'saveExample', label: 'Save as Example' },
+            ]}
+          />
+          <Button variant="ghost" size="sm" className="p-1">
+            <MoreHorizontal className="w-4 h-4" />
+          </Button>
+        </div>
+      </div>
+
+      {/* URL bar */}
       <div className="flex items-center gap-2 p-3 border-b border-[#3d3d3d]">
         <Select
           value={request.method}
@@ -196,7 +228,7 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
               <div className="space-y-2">
                 <Select
                   value={request.body.rawType || 'json'}
-                  onChange={(e) => handleBodyContentChange({ rawType: e.target.value })}
+                  onChange={(e) => handleBodyContentChange({ rawType: e.target.value as RawBodyType })}
                   options={[
                     { value: 'json', label: 'JSON' },
                     { value: 'xml', label: 'XML' },

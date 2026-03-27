@@ -276,7 +276,7 @@ export interface TrashItem {
 }
 
 export interface WebSocketMessage {
-  type: 'message' | 'ping' | 'pong' | 'close';
+  type: 'message' | 'sent' | 'received' | 'ping' | 'pong' | 'close';
   data?: string;
   timestamp: number;
 }
