@@ -27,6 +27,7 @@ import { Dropdown } from '../ui/Dropdown';
 import { Modal } from '../ui/Modal';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
+import { Logo, LogoWithText } from '../ui/Logo';
 import { apiClient } from '@/lib/api';
 
 interface SidebarProps {
@@ -495,6 +496,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Content area */}
       <div className="flex-1 flex flex-col border-r border-[#3a3a3b]">
         {/* Header */}
+        <div className="flex items-center gap-2 px-2 py-2 border-b border-[#3a3a3b]">
+          <div className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5">
+            <Logo size="sm" />
+            <span className="text-sm font-bold text-white tracking-wide">RUNNER</span>
+          </div>
+        </div>
+
+        {/* Action buttons */}
         <div className="flex items-center gap-2 px-2 py-2 border-b border-[#3a3a3b]">
           <button
             onClick={() => setShowNewCollectionModal(true)}

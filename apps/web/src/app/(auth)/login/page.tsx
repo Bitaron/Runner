@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { apiClient } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { LogoWithText } from '@/components/ui/Logo';
 import type { User } from '@apiforge/shared';
 
 export default function LoginPage() {
@@ -63,7 +64,10 @@ export default function LoginPage() {
   return (
     <div className="space-y-8">
       <div className="text-center">
-        <h1 className="text-3xl font-bold text-white mb-2">Welcome Back</h1>
+        <div className="flex justify-center mb-4">
+          <LogoWithText size="lg" />
+        </div>
+        <h1 className="text-2xl font-bold text-white mb-2">Welcome Back</h1>
         <p className="text-gray-400">Sign in to your Runner account</p>
       </div>
 

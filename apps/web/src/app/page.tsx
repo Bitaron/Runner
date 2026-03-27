@@ -3,19 +3,18 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/authStore';
+import { LogoWithText } from '@/components/ui/Logo';
 
 function LoadingSpinner() {
   return (
     <div className="min-h-screen bg-[#1e1e1e] flex flex-col items-center justify-center">
+      <LogoWithText size="lg" className="mb-8" />
       <div className="relative">
-        <div className="w-16 h-16 border-4 border-[#3d3d3d] rounded-full"></div>
-        <div className="absolute top-0 left-0 w-16 h-16 border-4 border-transparent border-t-[#ff6b35] rounded-full animate-spin"></div>
+        <div className="w-12 h-12 border-4 border-[#3d3d3d] rounded-full"></div>
+        <div className="absolute top-0 left-0 w-12 h-12 border-4 border-transparent border-t-[#ff6b35] rounded-full animate-spin"></div>
       </div>
-      <div className="mt-8 flex flex-col items-center">
-        <h1 className="text-2xl font-bold text-white tracking-wider">RUNNER</h1>
-        <p className="text-gray-500 mt-2 text-sm">Loading your workspace...</p>
-      </div>
-      <div className="mt-8 flex gap-1">
+      <p className="text-gray-500 mt-4 text-sm">Loading your workspace...</p>
+      <div className="mt-6 flex gap-1">
         <div className="w-2 h-2 bg-[#ff6b35] rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
         <div className="w-2 h-2 bg-[#ff6b35] rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
         <div className="w-2 h-2 bg-[#ff6b35] rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
