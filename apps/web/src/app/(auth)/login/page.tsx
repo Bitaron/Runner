@@ -61,7 +61,7 @@ export default function LoginPage() {
     <div className="space-y-8">
       <div className="text-center">
         <h1 className="text-3xl font-bold text-white mb-2">Welcome Back</h1>
-        <p className="text-gray-400">Sign in to your APIForge account</p>
+        <p className="text-gray-400">Sign in to your Runner account</p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">

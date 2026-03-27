@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'APIForge - API Development Platform',
+  title: 'Runner - API Development Platform',
   description: 'A powerful API testing tool similar to Postman',
 };
 

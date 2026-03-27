@@ -336,7 +336,7 @@ export default function WorkspacePage() {
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className="flex items-center justify-between px-4 py-2 bg-[#1e1e1e] border-b border-[#3d3d3d]">
           <div className="flex items-center gap-4">
-            <h1 className="text-lg font-semibold text-white">APIForge</h1>
+            <h1 className="text-lg font-semibold text-white">Runner</h1>
             {currentWorkspace && (
               <span className="text-sm text-gray-400">{currentWorkspace.name}</span>
             )}

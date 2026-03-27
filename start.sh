@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# APIForge - Start All Services Script
+# Runner - Start All Services Script
 # Usage: ./start.sh [options]
 # Options:
 #   -d, --docker    Start with Docker
@@ -38,7 +38,7 @@ log_error() {
 }
 
 show_help() {
-    echo "APIForge - Start All Services"
+    echo "Runner - Start All Services"
     echo ""
     echo "Usage: ./start.sh [options]"
     echo ""
@@ -287,7 +287,7 @@ case $MODE in
         
         log_success ""
         log_success "========================================"
-        log_success "  APIForge is running!"
+        log_success "  Runner is running!"
         log_success "========================================"
         log_success ""
         log_success "  Web UI:    http://localhost:$WEB_PORT"
