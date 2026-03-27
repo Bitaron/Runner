@@ -74,7 +74,8 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
     { id: 'headers', label: 'Headers' },
     { id: 'body', label: 'Body' },
     { id: 'auth', label: 'Auth' },
-    { id: 'scripts', label: 'Scripts' },
+    { id: 'pre-request', label: 'Pre-request Script' },
+    { id: 'tests', label: 'Tests' },
   ];
 
   const handleChange = (field: keyof ApiRequest, value: unknown) => {
@@ -348,32 +349,35 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
           </TabPanel>
         )}
 
-        {activeTab === 'scripts' && (
+        {activeTab === 'pre-request' && (
           <TabPanel>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Pre-request Script</label>
-                <p className="text-xs text-gray-500 mb-2">Scripts to be executed before the request is sent</p>
-                <textarea
-                  value={request.preRequestScript || ''}
-                  onChange={(e) => handleChange('preRequestScript', e.target.value)}
-                  placeholder="// Pre-request script
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">Pre-request Script</label>
+              <p className="text-xs text-gray-500 mb-2">Scripts to be executed before the request is sent</p>
+              <textarea
+                value={request.preRequestScript || ''}
+                onChange={(e) => handleChange('preRequestScript', e.target.value)}
+                placeholder="// Pre-request script
 pm.sendRequest('https://example.com/api/check', function(err, res) {
   if (!err) {
     console.log('Status:', res.status);
   }
 });"
-                  className="w-full h-40 p-3 bg-[#1e1e1e] border border-[#3d3d3d] rounded-md font-mono text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-[#ff6b35] resize-none"
-                />
-              </div>
+                className="w-full h-40 p-3 bg-[#1e1e1e] border border-[#3d3d3d] rounded-md font-mono text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-[#ff6b35] resize-none"
+              />
+            </div>
+          </TabPanel>
+        )}
 
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Test Script</label>
-                <p className="text-xs text-gray-500 mb-2">Scripts to be executed after the response is received</p>
-                <textarea
-                  value={request.testScript || ''}
-                  onChange={(e) => handleChange('testScript', e.target.value)}
-                  placeholder="// Test script
+        {activeTab === 'tests' && (
+          <TabPanel>
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">Test Script</label>
+              <p className="text-xs text-gray-500 mb-2">Scripts to be executed after the response is received</p>
+              <textarea
+                value={request.testScript || ''}
+                onChange={(e) => handleChange('testScript', e.target.value)}
+                placeholder="// Test script
 pm.test('Status is 200', function() {
   pm.response.to.have.status(200);
 });
@@ -382,9 +386,8 @@ pm.test('Response has data', function() {
   var jsonData = pm.response.json();
   pm.expect(jsonData).to.have.property('data');
 });"
-                  className="w-full h-40 p-3 bg-[#1e1e1e] border border-[#3d3d3d] rounded-md font-mono text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-[#ff6b35] resize-none"
-                />
-              </div>
+                className="w-full h-40 p-3 bg-[#1e1e1e] border border-[#3d3d3d] rounded-md font-mono text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-[#ff6b35] resize-none"
+              />
             </div>
           </TabPanel>
         )}

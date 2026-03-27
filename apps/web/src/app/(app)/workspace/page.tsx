@@ -8,29 +8,57 @@ import { TeamManagement } from '@/components/team';
 import { GlobalSearch, SearchShortcut } from '@/components/search';
 import { WebSocketRequest } from '@/components/websocket';
 import { SyncStatus } from '@/components/sync/SyncStatus';
+import { TopBar } from '@/components/layout/TopBar';
+import { RequestTabs } from '@/components/layout/RequestTabs';
+import { BottomBar } from '@/components/layout/BottomBar';
+import { HelpModal } from '@/components/layout/HelpModal';
 import { useCollectionsStore } from '@/stores/collectionsStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAuthStore } from '@/stores/authStore';
 import { apiClient } from '@/lib/api';
 import { syncManager } from '@/lib/syncManager';
+import { cn } from '@/lib/utils';
 import type { ApiRequest, Collection, Response, Workspace } from '@apiforge/shared';
 import { v4 as uuidv4 } from 'uuid';
-import { User, LogOut, Plus, Users, Search, Wifi, X } from 'lucide-react';
+
+interface RequestTab {
+  id: string;
+  request: ApiRequest;
+}
 
 export default function WorkspacePage() {
-  const [currentRequest, setCurrentRequest] = useState<ApiRequest | null>(null);
+  const [tabs, setTabs] = useState<RequestTab[]>([]);
+  const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [response, setResponse] = useState<Response | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [consoleLogs, setConsoleLogs] = useState<string[]>([]);
   const [testResults, setTestResults] = useState<Array<{ name: string; passed: boolean; error?: string }>>([]);
   const [showTeamModal, setShowTeamModal] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const [showWebSocket, setShowWebSocket] = useState(false);
   const [activePanel, setActivePanel] = useState<'http' | 'websocket'>('http');
+  const [layout, setLayout] = useState<'horizontal' | 'vertical'>('vertical');
 
   const { collections, addCollection, addRequest, updateRequest, addToHistory, createNewRequest } = useCollectionsStore();
   const { currentWorkspace, workspaces, setWorkspaces, setCurrentWorkspace } = useWorkspaceStore();
   const { user, tokens, isAnonymous, logout } = useAuthStore();
+
+  const getMethodColor = (method: string) => {
+    const colors: Record<string, string> = {
+      GET: 'bg-green-600 text-white',
+      POST: 'bg-[#ff6b35] text-white',
+      PUT: 'bg-blue-600 text-white',
+      PATCH: 'bg-yellow-600 text-white',
+      DELETE: 'bg-red-600 text-white',
+      HEAD: 'bg-gray-600 text-white',
+      OPTIONS: 'bg-purple-600 text-white',
+    };
+    return colors[method] || 'bg-gray-600 text-white';
+  };
+
+  const currentTab = tabs.find(t => t.id === activeTabId);
+  const currentRequest = currentTab?.request || null;
 
   useEffect(() => {
     const loadInitialData = async () => {
@@ -101,40 +129,83 @@ export default function WorkspacePage() {
     return unsubscribe;
   }, []);
 
-  const handleSelectRequest = useCallback((request: ApiRequest, collectionId?: string) => {
-    setCurrentRequest(request);
-    setResponse(null);
-    setConsoleLogs([]);
-    setTestResults([]);
-    setActivePanel('http');
-  }, []);
-
-  const handleSelectHistory = useCallback((request: ApiRequest) => {
-    setCurrentRequest(request);
-    setResponse(null);
-    setConsoleLogs([]);
-    setTestResults([]);
-    setActivePanel('http');
-  }, []);
-
-  const handleRequestChange = useCallback((updatedRequest: ApiRequest) => {
-    setCurrentRequest(updatedRequest);
-    
-    if (updatedRequest.collectionId) {
-      updateRequest(updatedRequest._id, updatedRequest);
-    }
-  }, [updateRequest]);
-
   const handleNewRequest = useCallback(() => {
     const userId = user?._id || 'anonymous';
     const workspaceId = currentWorkspace?._id || 'default';
     const newReq = createNewRequest(workspaceId, userId);
-    setCurrentRequest(newReq);
+    const newTab: RequestTab = {
+      id: uuidv4(),
+      request: newReq,
+    };
+    setTabs(prev => [...prev, newTab]);
+    setActiveTabId(newTab.id);
     setResponse(null);
     setConsoleLogs([]);
     setTestResults([]);
     setActivePanel('http');
   }, [user, currentWorkspace, createNewRequest]);
+
+  const handleTabSelect = useCallback((tabId: string) => {
+    setActiveTabId(tabId);
+    setResponse(null);
+    setConsoleLogs([]);
+    setTestResults([]);
+  }, []);
+
+  const handleTabClose = useCallback((tabId: string) => {
+    setTabs(prev => prev.filter(t => t.id !== tabId));
+    if (activeTabId === tabId) {
+      setActiveTabId(tabs[0]?.id || null);
+    }
+  }, [activeTabId, tabs]);
+
+  const handleSelectRequest = useCallback((request: ApiRequest, collectionId?: string) => {
+    const existingTab = tabs.find(t => t.request._id === request._id);
+    if (existingTab) {
+      setActiveTabId(existingTab.id);
+    } else {
+      const newTab: RequestTab = {
+        id: uuidv4(),
+        request,
+      };
+      setTabs(prev => [...prev, newTab]);
+      setActiveTabId(newTab.id);
+    }
+    setResponse(null);
+    setConsoleLogs([]);
+    setTestResults([]);
+    setActivePanel('http');
+  }, [tabs]);
+
+  const handleSelectHistory = useCallback((request: ApiRequest) => {
+    const existingTab = tabs.find(t => t.request._id === request._id);
+    if (existingTab) {
+      setActiveTabId(existingTab.id);
+    } else {
+      const newTab: RequestTab = {
+        id: uuidv4(),
+        request,
+      };
+      setTabs(prev => [...prev, newTab]);
+      setActiveTabId(newTab.id);
+    }
+    setResponse(null);
+    setConsoleLogs([]);
+    setTestResults([]);
+    setActivePanel('http');
+  }, [tabs]);
+
+  const handleRequestChange = useCallback((updatedRequest: ApiRequest) => {
+    setTabs(prev => prev.map(t => 
+      t.id === activeTabId 
+        ? { ...t, request: updatedRequest }
+        : t
+    ));
+    
+    if (updatedRequest.collectionId) {
+      updateRequest(updatedRequest._id, updatedRequest);
+    }
+  }, [activeTabId, updateRequest]);
 
   const executeScript = useCallback((script: string, context: { request: ApiRequest; response?: Response }) => {
     const logs: string[] = [];
@@ -334,103 +405,91 @@ export default function WorkspacePage() {
       />
 
       <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-2 bg-[#1e1e1e] border-b border-[#3d3d3d]">
-          <div className="flex items-center gap-4">
-            <h1 className="text-lg font-semibold text-white">Runner</h1>
-            {currentWorkspace && (
-              <span className="text-sm text-gray-400">{currentWorkspace.name}</span>
-            )}
-          </div>
-          
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowSearch(true)}
-              className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-400 bg-[#2d2d2d] rounded hover:bg-[#3d3d3d] transition-colors"
-            >
-              <Search className="w-4 h-4" />
-              <span className="hidden sm:inline">Search</span>
-              <kbd className="hidden sm:inline px-1.5 py-0.5 text-xs bg-[#3d3d3d] rounded">⌘K</kbd>
-            </button>
-            
-            <button
-              onClick={() => setShowTeamModal(true)}
-              className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-400 hover:text-white hover:bg-[#3d3d3d] rounded transition-colors"
-            >
-              <Users className="w-4 h-4" />
-              <span className="hidden sm:inline">Team</span>
-            </button>
+        <TopBar
+          onSearchOpen={() => setShowSearch(true)}
+          onTeamOpen={() => setShowTeamModal(true)}
+          onSettingsOpen={() => {}}
+          onNewRequest={handleNewRequest}
+        />
 
-            <button
-              onClick={() => setActivePanel(activePanel === 'http' ? 'websocket' : 'http')}
-              className={`flex items-center gap-2 px-3 py-1.5 text-sm rounded transition-colors ${
-                activePanel === 'websocket' 
-                  ? 'bg-[#ff6b35] text-white' 
-                  : 'text-gray-400 hover:text-white hover:bg-[#3d3d3d]'
-              }`}
-            >
-              <Wifi className="w-4 h-4" />
-              <span className="hidden sm:inline">WebSocket</span>
-            </button>
+        {tabs.length > 0 && (
+          <RequestTabs
+            tabs={tabs}
+            activeTabId={activeTabId}
+            onTabSelect={handleTabSelect}
+            onTabClose={handleTabClose}
+            onNewTab={handleNewRequest}
+            getMethodColor={getMethodColor}
+          />
+        )}
 
-            {!isAnonymous && <SyncStatus />}
-
-            {isAnonymous && (
-              <span className="text-xs text-yellow-500 bg-yellow-500/10 px-2 py-1 rounded">
-                Guest Mode
-              </span>
-            )}
-            
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-2 text-sm text-gray-400">
-                <User className="w-4 h-4" />
-                <span className="hidden sm:inline">{user?.name || 'User'}</span>
+        <div className={cn(
+          "flex-1 overflow-hidden",
+          layout === 'horizontal' ? "grid grid-cols-2" : "flex flex-col"
+        )}>
+          {layout === 'horizontal' ? (
+            <>
+              <div className="border-r border-[#3d3d3d] overflow-y-auto">
+                {activePanel === 'http' ? (
+                  <RequestBuilder
+                    request={currentRequest}
+                    onRequestChange={handleRequestChange}
+                    onSend={handleSendRequest}
+                    isLoading={isLoading}
+                  />
+                ) : (
+                  <WebSocketRequest />
+                )}
               </div>
-              <button
-                onClick={handleLogout}
-                className="p-2 text-gray-400 hover:text-white transition-colors"
-                title="Logout"
-              >
-                <LogOut className="w-4 h-4" />
-              </button>
-            </div>
-            
-            <button
-              onClick={handleNewRequest}
-              className="px-3 py-1.5 text-sm bg-[#ff6b35] text-white rounded hover:bg-[#e55a2b] transition-colors flex items-center gap-1"
-            >
-              <Plus className="w-4 h-4" />
-              <span className="hidden sm:inline">New Request</span>
-            </button>
-          </div>
+              <div className="overflow-y-auto">
+                {activePanel === 'http' ? (
+                  <ResponseViewer
+                    response={response}
+                    isLoading={isLoading}
+                    consoleLogs={consoleLogs}
+                    testResults={testResults}
+                  />
+                ) : (
+                  <WebSocketRequest />
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="h-1/2 border-b border-[#3d3d3d] overflow-y-auto">
+                {activePanel === 'http' ? (
+                  <RequestBuilder
+                    request={currentRequest}
+                    onRequestChange={handleRequestChange}
+                    onSend={handleSendRequest}
+                    isLoading={isLoading}
+                  />
+                ) : (
+                  <WebSocketRequest />
+                )}
+              </div>
+              <div className="h-1/2 overflow-y-auto">
+                {activePanel === 'http' ? (
+                  <ResponseViewer
+                    response={response}
+                    isLoading={isLoading}
+                    consoleLogs={consoleLogs}
+                    testResults={testResults}
+                  />
+                ) : (
+                  <WebSocketRequest />
+                )}
+              </div>
+            </>
+          )}
         </div>
 
-        <div className="flex-1 grid grid-cols-2 overflow-hidden">
-          <div className="border-r border-[#3d3d3d] overflow-y-auto">
-            {activePanel === 'http' ? (
-              <RequestBuilder
-                request={currentRequest}
-                onRequestChange={handleRequestChange}
-                onSend={handleSendRequest}
-                isLoading={isLoading}
-              />
-            ) : (
-              <WebSocketRequest />
-            )}
-          </div>
-
-          <div className="overflow-y-auto">
-            {activePanel === 'http' ? (
-              <ResponseViewer
-                response={response}
-                isLoading={isLoading}
-                consoleLogs={consoleLogs}
-                testResults={testResults}
-              />
-            ) : (
-              <WebSocketRequest />
-            )}
-          </div>
-        </div>
+        <BottomBar
+          layout={layout}
+          onLayoutChange={setLayout}
+          onHelpOpen={() => setShowHelp(true)}
+          onConsoleOpen={() => {}}
+        />
       </div>
 
       <TeamManagement
@@ -442,6 +501,11 @@ export default function WorkspacePage() {
         isOpen={showSearch}
         onClose={() => setShowSearch(false)}
         onSelectRequest={handleSelectRequest}
+      />
+
+      <HelpModal
+        isOpen={showHelp}
+        onClose={() => setShowHelp(false)}
       />
     </div>
   );

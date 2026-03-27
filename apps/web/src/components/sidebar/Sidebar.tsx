@@ -15,6 +15,9 @@ import {
   Trash2,
   MoreVertical,
   Search,
+  Layers,
+  Download,
+  Grid3X3,
 } from 'lucide-react';
 import type { Collection, Folder, ApiRequest } from '@apiforge/shared';
 import { Dropdown } from '../ui/Dropdown';
@@ -26,12 +29,16 @@ interface SidebarProps {
   onSelectRequest: (request: ApiRequest, collectionId?: string, folderId?: string) => void;
   onSelectHistory: (request: ApiRequest) => void;
   className?: string;
+  onImport?: () => void;
+  onNewCollection?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
   onSelectRequest,
   onSelectHistory,
   className,
+  onImport,
+  onNewCollection,
 }) => {
   const [activeTab, setActiveTab] = useState<'collections' | 'history' | 'environments'>('collections');
   const [expandedCollections, setExpandedCollections] = useState<Set<string>>(new Set());
@@ -39,10 +46,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [showNewCollectionModal, setShowNewCollectionModal] = useState(false);
   const [newCollectionName, setNewCollectionName] = useState('');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const { collections, addCollection, removeCollection } = useCollectionsStore();
   const { history } = useCollectionsStore();
   const { environments, currentEnvironment, setCurrentEnvironment } = useWorkspaceStore();
+
+  const iconRailItems = [
+    { id: 'collections', icon: Layers, label: 'Collections' },
+    { id: 'environments', icon: FileJson, label: 'Environments' },
+    { id: 'history', icon: Clock, label: 'History' },
+  ];
 
   const toggleCollection = (id: string) => {
     const newExpanded = new Set(expandedCollections);
@@ -190,35 +204,83 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   return (
-    <div className={cn('flex flex-col h-full bg-[#262627] border-r border-[#3a3a3b]', className)}>
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-[#3a3a3b]">
-        <button
-          onClick={() => setActiveTab('collections')}
-          className={cn(
-            'flex-1 py-1.5 text-xs font-medium rounded transition-colors',
-            activeTab === 'collections' ? 'bg-[#3d3d3e] text-white' : 'text-gray-400 hover:text-white'
-          )}
-        >
-          Collections
-        </button>
-        <button
-          onClick={() => setActiveTab('history')}
-          className={cn(
-            'flex-1 py-1.5 text-xs font-medium rounded transition-colors',
-            activeTab === 'history' ? 'bg-[#3d3d3e] text-white' : 'text-gray-400 hover:text-white'
-          )}
-        >
-          History
-        </button>
-        <button
-          onClick={() => setActiveTab('environments')}
-          className={cn(
-            'flex-1 py-1.5 text-xs font-medium rounded transition-colors',
-            activeTab === 'environments' ? 'bg-[#3d3d3e] text-white' : 'text-gray-400 hover:text-white'
-          )}
-        >
-          Env
-        </button>
+    <div className={cn('flex h-full bg-[#262627]', className)}>
+      {/* Icon rail */}
+      <div className="w-10 flex flex-col items-center py-2 border-r border-[#3a3a3b] bg-[#1e1e1e]">
+        {iconRailItems.map((item) => {
+          const Icon = item.icon;
+          return (
+            <button
+              key={item.id}
+              onClick={() => {
+                if (item.id === 'collections') setActiveTab('collections');
+                else if (item.id === 'environments') setActiveTab('environments');
+                else if (item.id === 'history') setActiveTab('history');
+              }}
+              className={cn(
+                "p-2 mb-1 rounded transition-colors",
+                activeTab === item.id
+                  ? "text-[#ff6b35] bg-[#3d3d3e]"
+                  : "text-gray-400 hover:text-white hover:bg-[#3d3d3e]"
+              )}
+              title={item.label}
+            >
+              <Icon className="w-5 h-5" />
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Main sidebar content */}
+      <div className="flex-1 flex flex-col border-r border-[#3a3a3b]">
+        {/* New + Import buttons */}
+        <div className="flex items-center gap-2 px-2 py-2 border-b border-[#3a3a3b]">
+          <button
+            onClick={() => onNewCollection ? onNewCollection() : setShowNewCollectionModal(true)}
+            className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-xs font-medium bg-[#ff6b35] text-white rounded hover:bg-[#e55a2b] transition-colors"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            New
+          </button>
+          <button
+            onClick={onImport}
+            className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-xs font-medium text-gray-300 bg-[#3d3d3d] rounded hover:bg-[#4d4d4d] transition-colors"
+          >
+            <Download className="w-3.5 h-3.5" />
+            Import
+          </button>
+        </div>
+
+        {/* Tab bar */}
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-[#3a3a3b]">
+          <button
+            onClick={() => setActiveTab('collections')}
+            className={cn(
+              'flex-1 py-1.5 text-xs font-medium rounded transition-colors',
+              activeTab === 'collections' ? 'bg-[#3d3d3e] text-white' : 'text-gray-400 hover:text-white'
+            )}
+          >
+            Collections
+          </button>
+          <button
+            onClick={() => setActiveTab('history')}
+            className={cn(
+              'flex-1 py-1.5 text-xs font-medium rounded transition-colors',
+              activeTab === 'history' ? 'bg-[#3d3d3e] text-white' : 'text-gray-400 hover:text-white'
+            )}
+          >
+            History
+          </button>
+          <button
+            onClick={() => setActiveTab('environments')}
+            className={cn(
+              'flex-1 py-1.5 text-xs font-medium rounded transition-colors',
+              activeTab === 'environments' ? 'bg-[#3d3d3e] text-white' : 'text-gray-400 hover:text-white'
+            )}
+          >
+            Env
+          </button>
+        </div>
       </div>
 
       <div className="p-2">
