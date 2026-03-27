@@ -13,6 +13,7 @@ import { Send, Code, Loader2, Settings, ChevronRight, Save, MoreHorizontal } fro
 import type { ApiRequest, HttpMethod, RequestBodyMode, RequestBody, AuthConfig, AuthType, RawBodyType } from '@apiforge/shared';
 import { CodeGenModal } from './CodeGenModal';
 import { Dropdown } from '../ui/Dropdown';
+import { VariableHighlighter } from '../environment/VariableTooltip';
 
 const HTTP_METHODS: { value: HttpMethod; label: string }[] = [
   { value: 'GET', label: 'GET' },
@@ -60,7 +61,7 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
   const [activeTab, setActiveTab] = useState('params');
   const [showCodeGen, setShowCodeGen] = useState(false);
   const { currentWorkspace } = useWorkspaceStore();
-  const { getInterpolatedValue } = useWorkspaceStore();
+  const { getInterpolatedValue, currentEnvironment, globalVariables } = useWorkspaceStore();
 
   if (!request) {
     return (
@@ -103,6 +104,19 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
 
   const interpolateUrl = () => {
     return getInterpolatedValue(request.url);
+  };
+
+  const getVariablesForHighlighter = () => {
+    const vars: Array<{ key: string; value: string; scope: 'environment' | 'global' | 'local' }> = [];
+    if (currentEnvironment) {
+      currentEnvironment.variables.forEach(v => {
+        if (v.enabled) vars.push({ key: v.key, value: v.value, scope: 'environment' });
+      });
+    }
+    globalVariables.forEach(v => {
+      if (v.enabled) vars.push({ key: v.key, value: v.value, scope: 'global' });
+    });
+    return vars;
   };
 
   return (
@@ -151,12 +165,22 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
           className="w-28 font-bold"
         />
         
-        <Input
-          value={request.url}
-          onChange={(e) => handleChange('url', e.target.value)}
-          placeholder="Enter request URL"
-          className="flex-1 font-mono text-sm"
-        />
+        <div className="flex-1 relative">
+          <Input
+            value={request.url}
+            onChange={(e) => handleChange('url', e.target.value)}
+            placeholder="Enter request URL"
+            className="font-mono text-sm w-full"
+          />
+          {request.url.includes('{{') && (
+            <div className="absolute left-0 top-full mt-1 w-full">
+              <VariableHighlighter
+                text={request.url}
+                variables={getVariablesForHighlighter()}
+              />
+            </div>
+          )}
+        </div>
         
         <Button onClick={onSend} disabled={isLoading || !request.url.trim()}>
           {isLoading ? (
