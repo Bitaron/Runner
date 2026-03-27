@@ -13,13 +13,14 @@ import { RequestTabs } from '@/components/layout/RequestTabs';
 import { BottomBar } from '@/components/layout/BottomBar';
 import { HelpModal } from '@/components/layout/HelpModal';
 import { CollectionPanel } from '@/components/collection';
+import { EnvironmentPanel } from '@/components/environment';
 import { useCollectionsStore } from '@/stores/collectionsStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAuthStore } from '@/stores/authStore';
 import { apiClient } from '@/lib/api';
 import { syncManager } from '@/lib/syncManager';
 import { cn } from '@/lib/utils';
-import type { ApiRequest, Collection, Response, Workspace, Folder } from '@apiforge/shared';
+import type { ApiRequest, Collection, Response, Workspace, Folder, Environment } from '@apiforge/shared';
 import { v4 as uuidv4 } from 'uuid';
 
 interface RequestTab {
@@ -42,9 +43,11 @@ export default function WorkspacePage() {
   const [layout, setLayout] = useState<'horizontal' | 'vertical'>('vertical');
   const [selectedCollection, setSelectedCollection] = useState<Collection | null>(null);
   const [selectedFolder, setSelectedFolder] = useState<Folder | null>(null);
+  const [selectedEnvironment, setSelectedEnvironment] = useState<Environment | null>(null);
+  const [showGlobals, setShowGlobals] = useState(false);
 
   const { collections, addCollection, addRequest, updateRequest, addToHistory, createNewRequest } = useCollectionsStore();
-  const { currentWorkspace, workspaces, setWorkspaces, setCurrentWorkspace } = useWorkspaceStore();
+  const { currentWorkspace, workspaces, setWorkspaces, setCurrentWorkspace, environments, globalVariables, addEnvironment, updateEnvironment, removeEnvironment } = useWorkspaceStore();
   const { user, tokens, isAnonymous, logout } = useAuthStore();
 
   const getMethodColor = (method: string) => {
@@ -412,6 +415,14 @@ export default function WorkspacePage() {
           setSelectedCollection(collection);
           setSelectedFolder(folder);
         }}
+        onSelectEnvironment={(environment) => {
+          setSelectedEnvironment(environment);
+          setShowGlobals(false);
+        }}
+        onSelectGlobals={() => {
+          setSelectedEnvironment(null);
+          setShowGlobals(true);
+        }}
         className="w-72 flex-shrink-0"
       />
 
@@ -520,6 +531,46 @@ export default function WorkspacePage() {
               useCollectionsStore.getState().updateFolder(selectedCollection._id, folderId, updates);
               if (selectedFolder && selectedFolder._id === folderId) {
                 setSelectedFolder({ ...selectedFolder, ...updates });
+              }
+            }}
+          />
+        </div>
+      )}
+
+      {(selectedEnvironment || showGlobals) && (
+        <div className="w-[500px] border-l border-[#3d3d3d]">
+          <EnvironmentPanel
+            environment={showGlobals 
+              ? { _id: 'globals', type: 'environment', name: 'Globals', workspaceId: currentWorkspace?._id || '', variables: globalVariables, createdAt: '', updatedAt: '', isGlobal: true }
+              : selectedEnvironment!
+            }
+            isGlobals={showGlobals}
+            onClose={() => {
+              setSelectedEnvironment(null);
+              setShowGlobals(false);
+            }}
+            onUpdate={(updates) => {
+              if (showGlobals && updates.variables) {
+                useWorkspaceStore.getState().updateGlobalVariables(updates.variables);
+              } else if (selectedEnvironment) {
+                useWorkspaceStore.getState().updateEnvironment(selectedEnvironment._id, updates);
+                setSelectedEnvironment({ ...selectedEnvironment, ...updates });
+              }
+            }}
+            onDelete={() => {
+              if (selectedEnvironment) {
+                useWorkspaceStore.getState().removeEnvironment(selectedEnvironment._id);
+                setSelectedEnvironment(null);
+              }
+            }}
+            onDuplicate={() => {
+              if (selectedEnvironment) {
+                const newEnv: Environment = {
+                  ...selectedEnvironment,
+                  _id: `environment:${uuidv4()}`,
+                  name: `${selectedEnvironment.name} (Copy)`,
+                };
+                addEnvironment(newEnv);
               }
             }}
           />

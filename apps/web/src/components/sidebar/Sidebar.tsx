@@ -18,8 +18,9 @@ import {
   Layers,
   Download,
   Grid3X3,
+  Eye,
 } from 'lucide-react';
-import type { Collection, Folder, ApiRequest } from '@apiforge/shared';
+import type { Collection, Folder, ApiRequest, Environment } from '@apiforge/shared';
 import { Dropdown } from '../ui/Dropdown';
 import { Modal } from '../ui/Modal';
 import { Input } from '../ui/Input';
@@ -30,6 +31,8 @@ interface SidebarProps {
   onSelectHistory: (request: ApiRequest) => void;
   onSelectCollection?: (collection: Collection) => void;
   onSelectFolder?: (collection: Collection, folder: Folder) => void;
+  onSelectEnvironment?: (environment: Environment) => void;
+  onSelectGlobals?: () => void;
   className?: string;
   onImport?: () => void;
   onNewCollection?: () => void;
@@ -40,6 +43,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSelectHistory,
   onSelectCollection,
   onSelectFolder,
+  onSelectEnvironment,
+  onSelectGlobals,
   className,
   onImport,
   onNewCollection,
@@ -58,7 +63,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const iconRailItems = [
     { id: 'collections', icon: Layers, label: 'Collections' },
-    { id: 'environments', icon: FileJson, label: 'Environments' },
+    { id: 'environments', icon: Eye, label: 'Environments' },
     { id: 'history', icon: Clock, label: 'History' },
   ];
 
@@ -368,19 +373,47 @@ export const Sidebar: React.FC<SidebarProps> = ({
               environments.map((env) => (
                 <div
                   key={env._id}
+                  onClick={() => onSelectEnvironment?.(env)}
                   className={cn(
-                    'flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer',
+                    'flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer group',
                     currentEnvironment?._id === env._id
-                      ? 'bg-[#3d3d3e] text-white'
+                      ? 'bg-[#3d3d3e] border-l-2 border-[#ff6b35]'
                       : 'hover:bg-[#333334] text-gray-300'
                   )}
-                  onClick={() => setCurrentEnvironment(env)}
                 >
-                  <FileJson className="w-4 h-4 text-green-500" />
-                  <span className="text-sm">{env.name}</span>
+                  <Eye className="w-4 h-4 text-gray-400" />
+                  <span className="flex-1 text-sm truncate">{env.name}</span>
                 </div>
               ))
             )}
+            <button
+              onClick={() => {
+                const newEnv: Environment = {
+                  _id: `environment:${crypto.randomUUID()}`,
+                  type: 'environment',
+                  workspaceId: currentWorkspace?._id || '',
+                  name: 'New Environment',
+                  variables: [],
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                  isGlobal: false,
+                };
+                useWorkspaceStore.getState().addEnvironment(newEnv);
+              }}
+              className="flex items-center gap-2 w-full px-2 py-1.5 text-sm text-gray-400 hover:text-white hover:bg-[#333334] rounded transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              Add Environment
+            </button>
+            <div className="pt-2 mt-2 border-t border-[#3a3a3b]">
+              <button
+                onClick={() => onSelectGlobals?.()}
+                className="flex items-center gap-2 w-full px-2 py-1.5 text-sm text-gray-400 hover:text-white hover:bg-[#333334] rounded transition-colors"
+              >
+                <Eye className="w-4 h-4" />
+                <span>Globals</span>
+              </button>
+            </div>
           </div>
         )}
       </div>
