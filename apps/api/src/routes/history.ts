@@ -74,7 +74,7 @@ router.delete('/', authMiddleware, async (req: AuthenticatedRequest, res: Respon
       .filter((row) => (row.doc as HistoryEntry).type === 'history');
 
     for (const row of historyDocs) {
-      await db.destroy(row.id, row.value.rev);
+      await db.destroy(row.id, (row as any).value?.rev);
     }
 
     res.json({ success: true, message: 'History cleared' });
@@ -86,7 +86,8 @@ router.delete('/', authMiddleware, async (req: AuthenticatedRequest, res: Respon
 router.delete('/:id', authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const db = getDb();
-    await db.destroy(req.params.id);
+    const doc = await db.get(req.params.id);
+    await db.destroy(req.params.id, doc._rev);
     res.json({ success: true, message: 'History entry deleted' });
   } catch (error) {
     res.status(500).json({ success: false, error: 'Failed to delete history entry' });

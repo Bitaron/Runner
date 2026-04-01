@@ -26,19 +26,20 @@ const parseCookies = (setCookieHeader: string[] | undefined): Array<{ name: stri
 };
 
 const applyAuth = (config: AxiosRequestConfig, auth: AuthConfig, params: KeyValue[], headers: KeyValue[]): void => {
+  config.headers = config.headers || {};
   switch (auth.type) {
     case 'bearer':
-      config.headers['Authorization'] = `${auth.bearer?.prefix || 'Bearer'} ${auth.bearer?.token}`;
+      config.headers!['Authorization'] = `${auth.bearer?.prefix || 'Bearer'} ${auth.bearer?.token}`;
       break;
     
     case 'basic':
       const credentials = Buffer.from(`${auth.basic?.username}:${auth.basic?.password}`).toString('base64');
-      config.headers['Authorization'] = `Basic ${credentials}`;
+      config.headers!['Authorization'] = `Basic ${credentials}`;
       break;
     
     case 'apikey':
       if (auth.apikey?.location === 'header') {
-        config.headers[auth.apikey.key] = auth.apikey.value;
+        config.headers![auth.apikey.key] = auth.apikey.value;
       } else {
         params.push({ key: auth.apikey?.key || '', value: auth.apikey?.value || '' });
       }

@@ -104,7 +104,7 @@ export const createDocument = async <T extends CouchDocument>(doc: T): Promise<T
 export const getDocument = async <T extends CouchDocument>(id: string): Promise<T | null> => {
   try {
     const doc = await db.get(id);
-    return doc as T;
+    return doc as unknown as T;
   } catch (error: unknown) {
     if ((error as { statusCode?: number }).statusCode === 404) {
       return null;
@@ -117,7 +117,7 @@ export const updateDocument = async <T extends CouchDocument>(id: string, update
   const existing = await db.get(id);
   const updated = { ...existing, ...updates, updatedAt: new Date().toISOString() };
   const result = await db.insert(updated as unknown as CouchDocument);
-  return { ...updated, _rev: result.rev } as T;
+  return { ...updated, _rev: result.rev } as unknown as T;
 };
 
 export const deleteDocument = async (id: string): Promise<void> => {
@@ -127,25 +127,25 @@ export const deleteDocument = async (id: string): Promise<void> => {
 
 export const findByType = async <T extends CouchDocument>(type: string): Promise<T[]> => {
   const result = await db.view('app', 'by_type', { key: type, include_docs: true });
-  return result.rows.map((row) => row.doc as T);
+  return result.rows.map((row) => row.doc as unknown as T);
 };
 
 export const findByUser = async <T extends CouchDocument>(userId: string): Promise<T[]> => {
   const result = await db.view('app', 'by_user', { key: userId, include_docs: true });
-  return result.rows.map((row) => row.doc as T);
+  return result.rows.map((row) => row.doc as unknown as T);
 };
 
 export const findByWorkspace = async <T extends CouchDocument>(workspaceId: string): Promise<T[]> => {
   const result = await db.view('app', 'by_workspace', { key: workspaceId, include_docs: true });
-  return result.rows.map((row) => row.doc as T);
+  return result.rows.map((row) => row.doc as unknown as T);
 };
 
 export const findByCollection = async <T extends CouchDocument>(collectionId: string): Promise<T[]> => {
   const result = await db.view('app', 'by_collection', { key: collectionId, include_docs: true });
-  return result.rows.map((row) => row.doc as T);
+  return result.rows.map((row) => row.doc as unknown as T);
 };
 
 export const findUserByEmail = async (email: string): Promise<User | null> => {
   const result = await db.view('app', 'users_by_email', { key: email.toLowerCase(), include_docs: true });
-  return result.rows.length > 0 ? (result.rows[0].doc as User) : null;
+  return result.rows.length > 0 ? (result.rows[0].doc as unknown as User) : null;
 };

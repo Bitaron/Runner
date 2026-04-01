@@ -10,6 +10,7 @@ export interface TokenPayload {
   userId: string;
   email: string;
   isAnonymous: boolean;
+  teams?: string[];
 }
 
 export const generateAccessToken = (payload: TokenPayload): string => {

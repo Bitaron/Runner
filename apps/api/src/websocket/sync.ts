@@ -16,14 +16,14 @@ interface SyncEvent {
   entityType: 'collection' | 'request' | 'folder' | 'environment' | 'workspace';
   entityId: string;
   data?: unknown;
-  userId: string;
+  userId?: string;
   userName?: string;
-  timestamp: number;
-  workspaceId: string;
+  timestamp?: number;
+  workspaceId?: string;
 }
 
 interface BroadcastMessage {
-  type: 'event' | 'user_joined' | 'user_left';
+  type: 'event' | 'user_joined' | 'user_left' | 'create' | 'update' | 'delete';
   workspaceId?: string;
   userId?: string;
   userName?: string;
@@ -196,9 +196,9 @@ export const broadcastSyncEvent = async (
   }
 
   const message: BroadcastMessage = {
-    type: 'event',
     ...event,
-  };
+    type: 'event',
+  } as BroadcastMessage;
 
   const messageStr = JSON.stringify(message);
 
