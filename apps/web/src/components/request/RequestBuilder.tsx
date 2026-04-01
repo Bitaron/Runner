@@ -64,9 +64,20 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
 }) => {
   const [showSendDropdown, setShowSendDropdown] = useState(false);
   const [activeTab, setActiveTab] = useState('params');
+  const [scriptSubTab, setScriptSubTab] = useState<'pre-request' | 'post-request'>('pre-request');
   const [showCodeGen, setShowCodeGen] = useState(false);
-  const { currentWorkspace } = useWorkspaceStore();
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editableName, setEditableName] = useState(request?.name || '');
   const { getInterpolatedValue, currentEnvironment, globalVariables } = useWorkspaceStore();
+  const { getCollectionAndFolderForRequest } = useCollectionsStore();
+
+  useEffect(() => {
+    if (request) {
+      setEditableName(request.name);
+    }
+  }, [request?._id, request?.name]);
+
+  const { collection, folder } = request ? getCollectionAndFolderForRequest(request._id) : { collection: null, folder: null };
 
   if (!request) {
     return (
@@ -81,7 +92,7 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
     { id: 'headers', label: 'Headers' },
     { id: 'body', label: 'Body' },
     { id: 'auth', label: 'Auth' },
-    { id: 'pre-request', label: 'Pre-request Script' },
+    { id: 'script', label: 'Script' },
     { id: 'tests', label: 'Tests' },
   ];
 
@@ -128,15 +139,56 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
     <div className="flex flex-col h-full">
       {/* Breadcrumb and save */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-[#3d3d3d]">
-        {request.collectionId && (
-          <div className="flex items-center gap-1 text-sm text-gray-400">
-            <span className="hover:text-[#ff6b35] cursor-pointer">Collections</span>
-            <ChevronRight className="w-4 h-4" />
-            <span className="hover:text-[#ff6b35] cursor-pointer truncate max-w-[100px]">{request.collectionId}</span>
-            <ChevronRight className="w-4 h-4" />
-            <span className="text-gray-200 truncate max-w-[100px]">{request.name}</span>
-          </div>
-        )}
+        <div className="flex items-center gap-1 text-sm text-gray-400">
+          <span className="hover:text-[#ff6b35] cursor-pointer">Collections</span>
+          {collection && (
+            <>
+              <ChevronRight className="w-4 h-4" />
+              <span className="hover:text-[#ff6b35] cursor-pointer truncate max-w-[120px]">{collection.name}</span>
+            </>
+          )}
+          {folder && (
+            <>
+              <ChevronRight className="w-4 h-4" />
+              <span className="hover:text-[#ff6b35] cursor-pointer truncate max-w-[120px]">{folder.name}</span>
+            </>
+          )}
+          <ChevronRight className="w-4 h-4" />
+          {isEditingName ? (
+            <input
+              type="text"
+              value={editableName}
+              onChange={(e) => setEditableName(e.target.value)}
+              onBlur={() => {
+                setIsEditingName(false);
+                if (editableName !== request.name && editableName.trim()) {
+                  handleChange('name', editableName.trim());
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  setIsEditingName(false);
+                  if (editableName.trim()) {
+                    handleChange('name', editableName.trim());
+                  }
+                } else if (e.key === 'Escape') {
+                  setEditableName(request.name);
+                  setIsEditingName(false);
+                }
+              }}
+              autoFocus
+              className="bg-[#2d2d2d] text-gray-200 px-1 py-0.5 rounded border border-[#ff6b35] focus:outline-none w-[150px] text-sm"
+            />
+          ) : (
+            <span 
+              className="text-gray-200 truncate max-w-[150px] cursor-pointer hover:text-[#ff6b35]"
+              onClick={() => setIsEditingName(true)}
+              title="Click to edit"
+            >
+              {request.name}
+            </span>
+          )}
+        </div>
         <div className="ml-auto flex items-center gap-1">
           <Dropdown
             trigger={
@@ -159,16 +211,28 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
 
       {/* URL bar */}
       <div className="flex items-center gap-2 p-3 border-b border-[#3d3d3d]">
-        <Select
+        <select
           value={request.method}
           onChange={(e) => handleChange('method', e.target.value as HttpMethod)}
-          options={HTTP_METHODS.map((m) => ({
-            value: m.value,
-            label: m.label,
-            className: cn('font-bold', `http-method.${m.value.toLowerCase()}`),
-          }))}
-          className="w-28 font-bold"
-        />
+          className={cn(
+            'px-2 py-1.5 bg-[#2d2d2d] border border-[#3d3d3d] rounded-md font-bold text-sm cursor-pointer',
+            'focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent',
+            'transition-colors duration-200 appearance-none min-w-[80px]',
+            request.method === 'GET' && 'text-green-400',
+            request.method === 'POST' && 'text-orange-400',
+            request.method === 'PUT' && 'text-blue-400',
+            request.method === 'PATCH' && 'text-yellow-400',
+            request.method === 'DELETE' && 'text-red-400',
+            ['HEAD', 'OPTIONS'].includes(request.method) && 'text-gray-400'
+          )}
+          style={{ width: '90px' }}
+        >
+          {HTTP_METHODS.map((m) => (
+            <option key={m.value} value={m.value} className={cn('font-bold', `http-method.${m.value.toLowerCase()}`)}>
+              {m.label}
+            </option>
+          ))}
+        </select>
         
         <div className="flex-1 relative">
           <Input
@@ -469,22 +533,65 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
           </TabPanel>
         )}
 
-        {activeTab === 'pre-request' && (
+        {activeTab === 'script' && (
           <TabPanel>
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Pre-request Script</label>
-              <p className="text-xs text-gray-500 mb-2">Scripts to be executed before the request is sent</p>
-              <textarea
-                value={request.preRequestScript || ''}
-                onChange={(e) => handleChange('preRequestScript', e.target.value)}
-                placeholder="// Pre-request script
+              <div className="flex border-b border-[#3d3d3d] mb-4">
+                <button
+                  onClick={() => setScriptSubTab('pre-request')}
+                  className={cn(
+                    'px-4 py-2 text-sm font-medium transition-colors',
+                    scriptSubTab === 'pre-request'
+                      ? 'text-[#ff6b35] border-b-2 border-[#ff6b35]'
+                      : 'text-gray-400 hover:text-gray-200'
+                  )}
+                >
+                  Pre-request
+                </button>
+                <button
+                  onClick={() => setScriptSubTab('post-request')}
+                  className={cn(
+                    'px-4 py-2 text-sm font-medium transition-colors',
+                    scriptSubTab === 'post-request'
+                      ? 'text-[#ff6b35] border-b-2 border-[#ff6b35]'
+                      : 'text-gray-400 hover:text-gray-200'
+                  )}
+                >
+                  Post-request
+                </button>
+              </div>
+              
+              {scriptSubTab === 'pre-request' && (
+                <div>
+                  <p className="text-xs text-gray-500 mb-2">Scripts to be executed before the request is sent</p>
+                  <textarea
+                    value={request.preRequestScript || ''}
+                    onChange={(e) => handleChange('preRequestScript', e.target.value)}
+                    placeholder="// Pre-request script
 pm.sendRequest('https://example.com/api/check', function(err, res) {
   if (!err) {
     console.log('Status:', res.status);
   }
 });"
-                className="w-full h-40 p-3 bg-[#1e1e1e] border border-[#3d3d3d] rounded-md font-mono text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-[#ff6b35] resize-none"
-              />
+                    className="w-full h-40 p-3 bg-[#1e1e1e] border border-[#3d3d3d] rounded-md font-mono text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-[#ff6b35] resize-none"
+                  />
+                </div>
+              )}
+              
+              {scriptSubTab === 'post-request' && (
+                <div>
+                  <p className="text-xs text-gray-500 mb-2">Scripts to be executed after the response is received</p>
+                  <textarea
+                    value={request.testScript || ''}
+                    onChange={(e) => handleChange('testScript', e.target.value)}
+                    placeholder="// Post-request script
+pm.test('Response is OK', function() {
+  pm.response.to.be.ok;
+});"
+                    className="w-full h-40 p-3 bg-[#1e1e1e] border border-[#3d3d3d] rounded-md font-mono text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-[#ff6b35] resize-none"
+                  />
+                </div>
+              )}
             </div>
           </TabPanel>
         )}

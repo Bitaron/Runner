@@ -36,6 +36,7 @@ interface CollectionsState {
   clearHistory: () => void;
   
   createNewRequest: (workspaceId: string, userId: string, collectionId?: string, folderId?: string) => ApiRequest;
+  getCollectionAndFolderForRequest: (requestId: string) => { collection: Collection | null; folder: Folder | null };
 }
 
 export const useCollectionsStore = create<CollectionsState>()(
@@ -440,6 +441,30 @@ export const useCollectionsStore = create<CollectionsState>()(
       })),
       
       clearHistory: () => set({ history: [] }),
+      
+      getCollectionAndFolderForRequest: (requestId: string) => {
+        const { collections } = get();
+        for (const collection of collections) {
+          if (collection.requests.find(r => r._id === requestId)) {
+            return { collection, folder: null };
+          }
+          const findInFolders = (folders: Folder[]): Folder | null => {
+            for (const folder of folders) {
+              if (folder.requests.find(r => r._id === requestId)) {
+                return folder;
+              }
+              const found = findInFolders(folder.folders);
+              if (found) return found;
+            }
+            return null;
+          };
+          const folder = findInFolders(collection.folders);
+          if (folder) {
+            return { collection, folder };
+          }
+        }
+        return { collection: null, folder: null };
+      },
       
       createNewRequest: (workspaceId, userId, collectionId, folderId) => ({
         _id: `request:${uuidv4()}`,

@@ -7,11 +7,12 @@ import { ResponseViewer } from '@/components/response/ResponseViewer';
 import { TeamManagement } from '@/components/team';
 import { GlobalSearch, SearchShortcut } from '@/components/search';
 import { WebSocketRequest } from '@/components/websocket';
-import { SyncStatus } from '@/components/sync/SyncStatus';
+import { SyncStatus, ToastContainer, toast } from '@/components/sync/SyncStatus';
 import { TopBar } from '@/components/layout/TopBar';
 import { RequestTabs } from '@/components/layout/RequestTabs';
 import { BottomBar } from '@/components/layout/BottomBar';
 import { HelpModal } from '@/components/layout/HelpModal';
+import { CollectionFolderViewer } from '@/components/layout/CollectionFolderViewer';
 import { CollectionPanel } from '@/components/collection';
 import { EnvironmentPanel } from '@/components/environment';
 import { useCollectionsStore } from '@/stores/collectionsStore';
@@ -25,11 +26,27 @@ import { v4 as uuidv4 } from 'uuid';
 
 interface RequestTab {
   id: string;
+  type: 'request';
   request: ApiRequest;
 }
 
+interface CollectionTab {
+  id: string;
+  type: 'collection';
+  collection: Collection;
+}
+
+interface FolderTab {
+  id: string;
+  type: 'folder';
+  collection: Collection;
+  folder: Folder;
+}
+
+type Tab = RequestTab | CollectionTab | FolderTab;
+
 export default function WorkspacePage() {
-  const [tabs, setTabs] = useState<RequestTab[]>([]);
+  const [tabs, setTabs] = useState<Tab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [response, setResponse] = useState<Response | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -69,8 +86,8 @@ export default function WorkspacePage() {
     return colors[method] || 'bg-gray-600 text-white';
   };
 
-  const currentTab = tabs.find(t => t.id === activeTabId);
-  const currentRequest = currentTab?.request || null;
+  const currentTab = tabs.find(t => t.id === activeTabId) as Tab | undefined;
+  const currentRequest = currentTab?.type === 'request' ? currentTab.request : null;
 
   useEffect(() => {
     const loadInitialData = async () => {
@@ -145,8 +162,16 @@ export default function WorkspacePage() {
     const userId = user?._id || 'anonymous';
     const workspaceId = currentWorkspace?._id || 'default';
     const newReq = createNewRequest(workspaceId, userId);
+    
+    // If a collection is selected, add the request to it
+    if (selectedCollection) {
+      const updatedRequests = [...selectedCollection.requests, newReq];
+      useCollectionsStore.getState().updateCollection(selectedCollection._id, { requests: updatedRequests });
+    }
+    
     const newTab: RequestTab = {
       id: uuidv4(),
+      type: 'request',
       request: newReq,
     };
     setTabs(prev => [...prev, newTab]);
@@ -155,7 +180,62 @@ export default function WorkspacePage() {
     setConsoleLogs([]);
     setTestResults([]);
     setActivePanel('http');
-  }, [user, currentWorkspace, createNewRequest]);
+    toast.success('New request created');
+  }, [user, currentWorkspace, createNewRequest, selectedCollection]);
+
+  const handleCreateNew = useCallback((type: 'http' | 'graphql' | 'websocket' | 'collection' | 'folder') => {
+    if (type === 'http') {
+      handleNewRequest();
+    } else if (type === 'graphql') {
+      handleNewRequest();
+      const newReq = createNewRequest(currentWorkspace?._id || 'default', user?._id || 'anonymous');
+      newReq.method = 'POST';
+      newReq.body = { mode: 'graphql', graphql: { query: '', variables: '' } };
+      setTabs(prev => {
+        const lastTab = prev[prev.length - 1];
+        if (lastTab && lastTab.type === 'request') {
+          return [...prev.slice(0, -1), { ...lastTab, request: newReq }];
+        }
+        return prev;
+      });
+    } else if (type === 'websocket') {
+      setActivePanel('websocket');
+      toast.info('WebSocket panel opened');
+    } else if (type === 'collection') {
+      // This is handled by the modal in Sidebar
+    } else if (type === 'folder') {
+      if (selectedCollection) {
+        const newFolder: Folder = {
+          _id: uuidv4(),
+          name: 'New Folder',
+          requests: [],
+          folders: [],
+          variables: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        const updatedFolders = [...selectedCollection.folders, newFolder];
+        useCollectionsStore.getState().updateCollection(selectedCollection._id, { folders: updatedFolders });
+        toast.success('New folder created');
+      } else {
+        toast.error('Select a collection first');
+      }
+    }
+  }, [handleNewRequest, currentWorkspace, user, selectedCollection]);
+
+  const handleDeleteCollection = useCallback((collectionId: string) => {
+    useCollectionsStore.getState().removeCollection(collectionId);
+    toast.success('Collection deleted');
+  }, []);
+
+  const handleDeleteFolder = useCallback((collectionId: string, folderId: string) => {
+    const collection = collections.find(c => c._id === collectionId);
+    if (collection) {
+      const updatedFolders = collection.folders.filter(f => f._id !== folderId);
+      useCollectionsStore.getState().updateCollection(collectionId, { folders: updatedFolders });
+      toast.success('Folder deleted');
+    }
+  }, [collections]);
 
   const handleTabSelect = useCallback((tabId: string) => {
     setActiveTabId(tabId);
@@ -178,6 +258,7 @@ export default function WorkspacePage() {
     } else {
       const newTab: RequestTab = {
         id: uuidv4(),
+        type: 'request',
         request,
       };
       setTabs(prev => [...prev, newTab]);
@@ -190,12 +271,13 @@ export default function WorkspacePage() {
   }, [tabs]);
 
   const handleSelectHistory = useCallback((request: ApiRequest) => {
-    const existingTab = tabs.find(t => t.request._id === request._id);
+    const existingTab = tabs.find((t): t is RequestTab => t.type === 'request' && t.request._id === request._id);
     if (existingTab) {
       setActiveTabId(existingTab.id);
     } else {
       const newTab: RequestTab = {
         id: uuidv4(),
+        type: 'request',
         request,
       };
       setTabs(prev => [...prev, newTab]);
@@ -207,9 +289,42 @@ export default function WorkspacePage() {
     setActivePanel('http');
   }, [tabs]);
 
+  const handleSelectCollection = useCallback((collection: Collection) => {
+    const existingTab = tabs.find((t): t is CollectionTab => t.type === 'collection' && t.collection._id === collection._id);
+    if (existingTab) {
+      setActiveTabId(existingTab.id);
+    } else {
+      const newTab: CollectionTab = {
+        id: uuidv4(),
+        type: 'collection',
+        collection,
+      };
+      setTabs(prev => [...prev, newTab]);
+      setActiveTabId(newTab.id);
+    }
+    setActivePanel('http');
+  }, [tabs]);
+
+  const handleSelectFolder = useCallback((collection: Collection, folder: Folder) => {
+    const existingTab = tabs.find((t): t is FolderTab => t.type === 'folder' && t.folder._id === folder._id);
+    if (existingTab) {
+      setActiveTabId(existingTab.id);
+    } else {
+      const newTab: FolderTab = {
+        id: uuidv4(),
+        type: 'folder',
+        collection,
+        folder,
+      };
+      setTabs(prev => [...prev, newTab]);
+      setActiveTabId(newTab.id);
+    }
+    setActivePanel('http');
+  }, [tabs]);
+
   const handleRequestChange = useCallback((updatedRequest: ApiRequest) => {
     setTabs(prev => prev.map(t => 
-      t.id === activeTabId 
+      t.id === activeTabId && t.type === 'request'
         ? { ...t, request: updatedRequest }
         : t
     ));
@@ -542,10 +657,12 @@ export default function WorkspacePage() {
         onSelectCollection={(collection) => {
           setSelectedCollection(collection);
           setSelectedFolder(null);
+          handleSelectCollection(collection);
         }}
         onSelectFolder={(collection, folder) => {
           setSelectedCollection(collection);
           setSelectedFolder(folder);
+          handleSelectFolder(collection, folder);
         }}
         onSelectEnvironment={(environment) => {
           setSelectedEnvironment(environment);
@@ -555,6 +672,11 @@ export default function WorkspacePage() {
           setSelectedEnvironment(null);
           setShowGlobals(true);
         }}
+        onCreateNew={handleCreateNew}
+        onDeleteCollection={handleDeleteCollection}
+        onDeleteFolder={handleDeleteFolder}
+        activeCollectionId={selectedCollection?._id}
+        activeFolderId={selectedFolder?._id}
         width={sidebarWidth}
         onWidthChange={setSidebarWidth}
         isCollapsed={sidebarCollapsed}
@@ -590,17 +712,41 @@ export default function WorkspacePage() {
           {layout === 'horizontal' ? (
             <>
               <div className="absolute inset-0 overflow-y-auto" style={{ width: `${splitPosition}%` }}>
-                {activePanel === 'http' ? (
-                  <RequestBuilder
-                    request={currentRequest}
-                    onRequestChange={handleRequestChange}
-                    onSend={handleSendRequest}
-                    onSendAndDownload={handleSendAndDownload}
-                    onCancel={handleCancelRequest}
-                    isLoading={isLoading}
+                {currentTab?.type === 'collection' && (
+                  <CollectionFolderViewer
+                    type="collection"
+                    collection={currentTab.collection}
+                    onSelectRequest={handleSelectRequest}
+                    onCreateRequest={handleNewRequest}
                   />
-                ) : (
-                  <WebSocketRequest />
+                )}
+                {currentTab?.type === 'folder' && (
+                  <CollectionFolderViewer
+                    type="folder"
+                    collection={currentTab.collection}
+                    folder={currentTab.folder}
+                    onSelectRequest={handleSelectRequest}
+                    onCreateRequest={handleNewRequest}
+                  />
+                )}
+                {currentTab?.type === 'request' && (
+                  activePanel === 'http' ? (
+                    <RequestBuilder
+                      request={currentRequest}
+                      onRequestChange={handleRequestChange}
+                      onSend={handleSendRequest}
+                      onSendAndDownload={handleSendAndDownload}
+                      onCancel={handleCancelRequest}
+                      isLoading={isLoading}
+                    />
+                  ) : (
+                    <WebSocketRequest />
+                  )
+                )}
+                {!currentTab && (
+                  <div className="flex items-center justify-center h-full text-gray-500">
+                    <p>Select or create a request to get started</p>
+                  </div>
                 )}
               </div>
               <div
@@ -609,15 +755,13 @@ export default function WorkspacePage() {
                 onMouseDown={() => setIsDragging(true)}
               />
               <div className="absolute inset-0 overflow-y-auto" style={{ left: `${splitPosition}%` }}>
-                {activePanel === 'http' ? (
+                {currentTab?.type === 'request' && activePanel === 'http' && (
                   <ResponseViewer
                     response={response}
                     isLoading={isLoading}
                     consoleLogs={consoleLogs}
                     testResults={testResults}
                   />
-                ) : (
-                  <WebSocketRequest />
                 )}
               </div>
             </>
@@ -627,17 +771,41 @@ export default function WorkspacePage() {
                 className="absolute inset-0 overflow-y-auto border-b border-[#3d3d3d]"
                 style={{ height: `${verticalSplitPosition}%` }}
               >
-                {activePanel === 'http' ? (
-                  <RequestBuilder
-                    request={currentRequest}
-                    onRequestChange={handleRequestChange}
-                    onSend={handleSendRequest}
-                    onSendAndDownload={handleSendAndDownload}
-                    onCancel={handleCancelRequest}
-                    isLoading={isLoading}
+                {currentTab?.type === 'collection' && (
+                  <CollectionFolderViewer
+                    type="collection"
+                    collection={currentTab.collection}
+                    onSelectRequest={handleSelectRequest}
+                    onCreateRequest={handleNewRequest}
                   />
-                ) : (
-                  <WebSocketRequest />
+                )}
+                {currentTab?.type === 'folder' && (
+                  <CollectionFolderViewer
+                    type="folder"
+                    collection={currentTab.collection}
+                    folder={currentTab.folder}
+                    onSelectRequest={handleSelectRequest}
+                    onCreateRequest={handleNewRequest}
+                  />
+                )}
+                {currentTab?.type === 'request' && (
+                  activePanel === 'http' ? (
+                    <RequestBuilder
+                      request={currentRequest}
+                      onRequestChange={handleRequestChange}
+                      onSend={handleSendRequest}
+                      onSendAndDownload={handleSendAndDownload}
+                      onCancel={handleCancelRequest}
+                      isLoading={isLoading}
+                    />
+                  ) : (
+                    <WebSocketRequest />
+                  )
+                )}
+                {!currentTab && (
+                  <div className="flex items-center justify-center h-full text-gray-500">
+                    <p>Select or create a request to get started</p>
+                  </div>
                 )}
               </div>
               <div
@@ -649,15 +817,13 @@ export default function WorkspacePage() {
                 className="absolute inset-0 overflow-y-auto"
                 style={{ top: `${verticalSplitPosition}%` }}
               >
-                {activePanel === 'http' ? (
+                {currentTab?.type === 'request' && activePanel === 'http' && (
                   <ResponseViewer
                     response={response}
                     isLoading={isLoading}
                     consoleLogs={consoleLogs}
                     testResults={testResults}
                   />
-                ) : (
-                  <WebSocketRequest />
                 )}
               </div>
             </>
@@ -750,6 +916,8 @@ export default function WorkspacePage() {
         isOpen={showHelp}
         onClose={() => setShowHelp(false)}
       />
+
+      <ToastContainer />
     </div>
   );
 }

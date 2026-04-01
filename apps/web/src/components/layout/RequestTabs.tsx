@@ -1,14 +1,30 @@
 'use client';
 
 import React from 'react';
-import { X, Plus } from 'lucide-react';
+import { X, Plus, FolderOpen, FileJson } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { ApiRequest } from '@apiforge/shared';
+import type { ApiRequest, Collection, Folder } from '@apiforge/shared';
 
-interface TabItem {
+interface RequestTabItem {
   id: string;
+  type: 'request';
   request: ApiRequest;
 }
+
+interface CollectionTabItem {
+  id: string;
+  type: 'collection';
+  collection: Collection;
+}
+
+interface FolderTabItem {
+  id: string;
+  type: 'folder';
+  collection: Collection;
+  folder: Folder;
+}
+
+type TabItem = RequestTabItem | CollectionTabItem | FolderTabItem;
 
 interface RequestTabsProps {
   tabs: TabItem[];
@@ -27,6 +43,48 @@ export const RequestTabs: React.FC<RequestTabsProps> = ({
   onNewTab,
   getMethodColor,
 }) => {
+  const getTabIcon = (tab: TabItem) => {
+    if (tab.type === 'request') {
+      return (
+        <span className={cn("text-xs font-medium px-1.5 py-0.5 rounded", getMethodColor(tab.request.method))}>
+          {tab.request.method}
+        </span>
+      );
+    } else if (tab.type === 'collection') {
+      return <FolderOpen className="w-4 h-4 text-[#ff6b35]" />;
+    } else {
+      return <FileJson className="w-4 h-4 text-blue-400" />;
+    }
+  };
+
+  const getTabTitle = (tab: TabItem) => {
+    if (tab.type === 'request') {
+      return tab.request.name || tab.request.url || 'Untitled';
+    } else if (tab.type === 'collection') {
+      return tab.collection.name;
+    } else {
+      return tab.folder.name;
+    }
+  };
+
+  const getTabBreadcrumb = (tab: TabItem) => {
+    if (tab.type === 'request') {
+      return null;
+    } else if (tab.type === 'collection') {
+      return (
+        <span className="text-xs text-gray-500 ml-1">
+          / {tab.collection.name}
+        </span>
+      );
+    } else {
+      return (
+        <span className="text-xs text-gray-500 ml-1">
+          / {tab.collection.name} / {tab.folder.name}
+        </span>
+      );
+    }
+  };
+
   return (
     <div className="flex items-center h-10 bg-[#1e1e1e] border-b border-[#3d3d3d] overflow-x-auto">
       {tabs.map((tab) => (
@@ -40,12 +98,13 @@ export const RequestTabs: React.FC<RequestTabsProps> = ({
               : "hover:bg-[#262627]"
           )}
         >
-          <span className={cn("text-xs font-medium px-1.5 py-0.5 rounded", getMethodColor(tab.request.method))}>
-            {tab.request.method}
-          </span>
-          <span className="text-sm text-gray-300 max-w-[150px] truncate">
-            {tab.request.name || tab.request.url || 'Untitled'}
-          </span>
+          {getTabIcon(tab)}
+          <div className="flex items-center">
+            <span className="text-sm text-gray-300 max-w-[120px] truncate">
+              {getTabTitle(tab)}
+            </span>
+            {getTabBreadcrumb(tab)}
+          </div>
           <button
             onClick={(e) => {
               e.stopPropagation();

@@ -21,6 +21,10 @@ import {
   PanelLeftClose,
   PanelLeft,
   ChevronLeft,
+  FilePlus,
+  FolderPlus,
+  Zap,
+  Circle,
 } from 'lucide-react';
 import type { Collection, Folder, ApiRequest, Environment } from '@apiforge/shared';
 import { Dropdown } from '../ui/Dropdown';
@@ -37,11 +41,16 @@ interface SidebarProps {
   onSelectFolder?: (collection: Collection, folder: Folder) => void;
   onSelectEnvironment?: (environment: Environment) => void;
   onSelectGlobals?: () => void;
+  onCreateNew?: (type: 'http' | 'graphql' | 'websocket' | 'collection' | 'folder') => void;
+  onDeleteCollection?: (collectionId: string) => void;
+  onDeleteFolder?: (collectionId: string, folderId: string) => void;
   className?: string;
   width?: number;
   onWidthChange?: (width: number) => void;
   isCollapsed?: boolean;
   onCollapseChange?: (collapsed: boolean) => void;
+  activeCollectionId?: string | null;
+  activeFolderId?: string | null;
 }
 
 const SIDEBAR_MIN_WIDTH = 150;
@@ -55,17 +64,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSelectFolder,
   onSelectEnvironment,
   onSelectGlobals,
+  onCreateNew,
+  onDeleteCollection,
+  onDeleteFolder,
   className,
   width = SIDEBAR_DEFAULT_WIDTH,
   onWidthChange,
   isCollapsed = false,
   onCollapseChange,
+  activeCollectionId,
+  activeFolderId,
 }) => {
   const [activeTab, setActiveTab] = useState<'collections' | 'history' | 'environments'>('collections');
   const [expandedCollections, setExpandedCollections] = useState<Set<string>>(new Set());
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
   const [showNewCollectionModal, setShowNewCollectionModal] = useState(false);
+  const [showNewDropdown, setShowNewDropdown] = useState(false);
   const [newCollectionName, setNewCollectionName] = useState('');
   const [importError, setImportError] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
@@ -294,9 +309,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
               />
             }
             items={[
-              { id: 'rename', label: 'Rename' },
-              { id: 'addFolder', label: 'Add Folder' },
               { id: 'addRequest', label: 'Add Request' },
+              { id: 'addFolder', label: 'Add Folder' },
+              { id: 'edit', label: 'Edit' },
               { id: 'export', label: 'Export' },
               { id: 'delete', label: 'Delete', danger: true },
             ]}
@@ -504,14 +519,92 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         {/* Action buttons */}
-        <div className="flex items-center gap-2 px-2 py-2 border-b border-[#3a3a3b]">
-          <button
-            onClick={() => setShowNewCollectionModal(true)}
-            className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-xs font-medium bg-[#ff6b35] text-white rounded hover:bg-[#e55a2b] transition-colors"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            New
-          </button>
+        <div className="flex items-center gap-2 px-2 py-2 border-b border-[#3a3a3b] relative">
+          <div className="relative flex-1">
+            <button
+              onClick={() => setShowNewDropdown(!showNewDropdown)}
+              onBlur={() => setTimeout(() => setShowNewDropdown(false), 200)}
+              className="w-full flex items-center justify-center gap-1 px-2 py-1.5 text-xs font-medium bg-[#ff6b35] text-white rounded hover:bg-[#e55a2b] transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>New</span>
+              <ChevronDown className="w-3 h-3 ml-1" />
+            </button>
+            
+            {showNewDropdown && (
+              <div className="absolute top-full left-0 mt-1 w-48 bg-[#2d2d2e] border border-[#3d3d3d] rounded-lg shadow-xl z-50">
+                <button
+                  onClick={() => {
+                    setShowNewDropdown(false);
+                    onCreateNew?.('http');
+                  }}
+                  className="w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-[#3d3d3d] flex items-center gap-2 transition-colors rounded-t-lg"
+                >
+                  <Zap className="w-4 h-4 text-[#ff6b35]" />
+                  <div>
+                    <div className="font-medium">HTTP Request</div>
+                    <div className="text-xs text-gray-500">REST API call</div>
+                  </div>
+                </button>
+                <button
+                  onClick={() => {
+                    setShowNewDropdown(false);
+                    onCreateNew?.('graphql');
+                  }}
+                  className="w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-[#3d3d3d] flex items-center gap-2 transition-colors"
+                >
+                  <Circle className="w-4 h-4 text-[#e535ab]" fill="#e535ab" />
+                  <div>
+                    <div className="font-medium">GraphQL</div>
+                    <div className="text-xs text-gray-500">GraphQL query</div>
+                  </div>
+                </button>
+                <button
+                  onClick={() => {
+                    setShowNewDropdown(false);
+                    onCreateNew?.('websocket');
+                  }}
+                  className="w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-[#3d3d3d] flex items-center gap-2 transition-colors"
+                >
+                  <Zap className="w-4 h-4 text-green-400" />
+                  <div>
+                    <div className="font-medium">WebSocket</div>
+                    <div className="text-xs text-gray-500">Real-time connection</div>
+                  </div>
+                </button>
+                <div className="border-t border-[#3d3d3d] my-1"></div>
+                <button
+                  onClick={() => {
+                    setShowNewDropdown(false);
+                    setShowNewCollectionModal(true);
+                  }}
+                  className="w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-[#3d3d3d] flex items-center gap-2 transition-colors"
+                >
+                  <FolderPlus className="w-4 h-4 text-[#d4a574]" />
+                  <div>
+                    <div className="font-medium">New Collection</div>
+                    <div className="text-xs text-gray-500">Create folder group</div>
+                  </div>
+                </button>
+                <button
+                  onClick={() => {
+                    setShowNewDropdown(false);
+                    onCreateNew?.('folder');
+                  }}
+                  className="w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-[#3d3d3d] flex items-center gap-2 transition-colors rounded-b-lg"
+                  disabled={!activeCollectionId}
+                >
+                  <FolderPlus className="w-4 h-4 text-[#d4a574]" />
+                  <div className={activeCollectionId ? '' : 'opacity-50'}>
+                    <div className="font-medium">New Folder</div>
+                    <div className="text-xs text-gray-500">
+                      {activeCollectionId ? 'In current collection' : 'Select a collection first'}
+                    </div>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
           <label className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-xs font-medium text-gray-300 bg-[#3d3d3d] rounded hover:bg-[#4d4d4d] transition-colors cursor-pointer">
             <Download className="w-3.5 h-3.5" />
             Import
