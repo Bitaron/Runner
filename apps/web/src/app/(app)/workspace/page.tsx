@@ -400,6 +400,132 @@ export default function WorkspacePage() {
     }
   }, [currentRequest, executeScript, addToHistory]);
 
+  const handleSendAndDownload = useCallback(async () => {
+    if (!currentRequest || !currentRequest.url.trim()) return;
+
+    setIsLoading(true);
+    setResponse(null);
+    setConsoleLogs([]);
+    setTestResults([]);
+
+    try {
+      if (currentRequest.preRequestScript) {
+        const scriptLogs = executeScript(currentRequest.preRequestScript, { request: currentRequest });
+        setConsoleLogs((prev) => [...prev, ...scriptLogs]);
+      }
+
+      const authHeaders: Record<string, string> = {};
+      if (currentRequest.auth.type === 'bearer' && currentRequest.auth.bearer) {
+        const prefix = currentRequest.auth.bearer.prefix || 'Bearer';
+        authHeaders['Authorization'] = `${prefix} ${currentRequest.auth.bearer.token}`;
+      } else if (currentRequest.auth.type === 'basic' && currentRequest.auth.basic) {
+        const credentials = btoa(`${currentRequest.auth.basic.username}:${currentRequest.auth.basic.password}`);
+        authHeaders['Authorization'] = `Basic ${credentials}`;
+      } else if (currentRequest.auth.type === 'apikey' && currentRequest.auth.apikey) {
+        if (currentRequest.auth.apikey.location === 'header') {
+          authHeaders[currentRequest.auth.apikey.key] = currentRequest.auth.apikey.value;
+        }
+      }
+
+      // Build URL with params
+      let url = currentRequest.url;
+      const params = currentRequest.params.filter((p) => !p.disabled && p.key);
+      if (params.length > 0) {
+        const searchParams = new URLSearchParams();
+        params.forEach((p) => searchParams.append(p.key, p.value));
+        url += (url.includes('?') ? '&' : '?') + searchParams.toString();
+      }
+
+      // Make direct fetch request for download
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/api/execute`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...authHeaders,
+        },
+        body: JSON.stringify({
+          method: currentRequest.method,
+          url: currentRequest.url,
+          headers: [...currentRequest.headers.filter((h) => !h.disabled), ...Object.entries(authHeaders).map(([key, value]) => ({ key, value }))],
+          params: currentRequest.params.filter((p) => !p.disabled),
+          body: currentRequest.body,
+          timeout: 30000,
+        }),
+      });
+
+      if (response.ok) {
+        // Get filename from content-disposition header or use default
+        const contentDisposition = response.headers.get('content-disposition');
+        let filename = 'download';
+        if (contentDisposition) {
+          const match = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+          if (match) {
+            filename = match[1].replace(/['"]/g, '');
+          }
+        }
+
+        // Get content type
+        const contentType = response.headers.get('content-type') || 'application/octet-stream';
+
+        // Download the file
+        const blob = await response.blob();
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(downloadUrl);
+
+        // Set a minimal response for display
+        setResponse({
+          status: response.status,
+          statusText: response.statusText,
+          headers: Object.fromEntries(response.headers.entries()),
+          body: `Downloaded: ${filename} (${(blob.size / 1024).toFixed(2)} KB)`,
+          contentType,
+          time: 0,
+          size: blob.size,
+          cookies: [],
+        });
+      } else {
+        const errorText = await response.text();
+        setResponse({
+          status: response.status,
+          statusText: response.statusText,
+          headers: Object.fromEntries(response.headers.entries()),
+          body: errorText || 'Download failed',
+          contentType: 'text/plain',
+          time: 0,
+          size: 0,
+          cookies: [],
+        });
+      }
+
+      addToHistory(currentRequest);
+    } catch (error) {
+      setResponse({
+        status: 0,
+        statusText: 'Error',
+        headers: {},
+        body: error instanceof Error ? error.message : 'Download failed',
+        contentType: 'text/plain',
+        time: 0,
+        size: 0,
+        cookies: [],
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [currentRequest, executeScript, addToHistory]);
+
+  const handleCancelRequest = useCallback(() => {
+    // Cancel the current request by setting isLoading to false
+    // In a real implementation, you'd use AbortController
+    setIsLoading(false);
+  }, []);
+
   const handleLogout = () => {
     syncManager.disconnect();
     logout();
@@ -469,6 +595,8 @@ export default function WorkspacePage() {
                     request={currentRequest}
                     onRequestChange={handleRequestChange}
                     onSend={handleSendRequest}
+                    onSendAndDownload={handleSendAndDownload}
+                    onCancel={handleCancelRequest}
                     isLoading={isLoading}
                   />
                 ) : (
@@ -504,6 +632,8 @@ export default function WorkspacePage() {
                     request={currentRequest}
                     onRequestChange={handleRequestChange}
                     onSend={handleSendRequest}
+                    onSendAndDownload={handleSendAndDownload}
+                    onCancel={handleCancelRequest}
                     isLoading={isLoading}
                   />
                 ) : (

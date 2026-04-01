@@ -9,7 +9,7 @@ import { Input } from '../ui/Input';
 import { Select } from '../ui/Select';
 import { Button } from '../ui/Button';
 import { KeyValueEditor } from '../ui/KeyValueEditor';
-import { Send, Code, Loader2, Settings, ChevronRight, Save, MoreHorizontal } from 'lucide-react';
+import { Send, Code, Loader2, Settings, ChevronRight, Save, MoreHorizontal, ChevronDown, Download, X } from 'lucide-react';
 import type { ApiRequest, HttpMethod, RequestBodyMode, RequestBody, AuthConfig, AuthType, RawBodyType, Variable } from '@apiforge/shared';
 import { CodeGenModal } from './CodeGenModal';
 import { Dropdown } from '../ui/Dropdown';
@@ -49,6 +49,8 @@ interface RequestBuilderProps {
   request: ApiRequest | null;
   onRequestChange: (request: ApiRequest) => void;
   onSend: () => void;
+  onSendAndDownload?: () => void;
+  onCancel?: () => void;
   isLoading: boolean;
 }
 
@@ -56,8 +58,11 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
   request,
   onRequestChange,
   onSend,
+  onSendAndDownload,
+  onCancel,
   isLoading,
 }) => {
+  const [showSendDropdown, setShowSendDropdown] = useState(false);
   const [activeTab, setActiveTab] = useState('params');
   const [showCodeGen, setShowCodeGen] = useState(false);
   const { currentWorkspace } = useWorkspaceStore();
@@ -182,14 +187,71 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
           )}
         </div>
         
-        <Button onClick={onSend} disabled={isLoading || !request.url.trim()}>
+        <div className="relative">
           {isLoading ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
+            <Button onClick={onCancel} variant="danger" className="gap-1">
+              <X className="w-4 h-4" />
+              Cancel
+            </Button>
           ) : (
-            <Send className="w-4 h-4" />
+            <>
+              <Button 
+                onClick={() => {
+                  if (showSendDropdown && onSendAndDownload) {
+                    setShowSendDropdown(false);
+                    onSendAndDownload();
+                  } else {
+                    onSend();
+                  }
+                }} 
+                disabled={!request.url.trim()}
+                className="gap-1"
+              >
+                <Send className="w-4 h-4" />
+                Send
+                {onSendAndDownload && (
+                  <>
+                    <span className="mx-1">|</span>
+                    <ChevronDown className="w-3 h-3" />
+                  </>
+                )}
+              </Button>
+              {onSendAndDownload && showSendDropdown && (
+                <div className="absolute top-full left-0 mt-1 w-48 bg-[#2d2d2e] border border-[#3d3d3d] rounded-lg shadow-xl z-50">
+                  <button
+                    onClick={() => {
+                      setShowSendDropdown(false);
+                      onSend();
+                    }}
+                    className="w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-[#3d3d3d] flex items-center gap-2 transition-colors rounded-t-lg"
+                  >
+                    <Send className="w-4 h-4 text-[#ff6b35]" />
+                    Send
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowSendDropdown(false);
+                      onSendAndDownload();
+                    }}
+                    className="w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-[#3d3d3d] flex items-center gap-2 transition-colors rounded-b-lg"
+                  >
+                    <Download className="w-4 h-4 text-[#ff6b35]" />
+                    Send and Download
+                  </button>
+                </div>
+              )}
+              {onSendAndDownload && !showSendDropdown && (
+                <button
+                  onClick={() => setShowSendDropdown(true)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-gray-400 hover:text-white transition-colors"
+                  onBlur={() => setShowSendDropdown(false)}
+                >
+                  <ChevronDown className="w-3 h-3" />
+                </button>
+              )}
+            </>
           )}
-          Send
-        </Button>
+        </div>
         
         <Button variant="ghost" onClick={() => setShowCodeGen(true)}>
           <Code className="w-4 h-4" />
