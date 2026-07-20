@@ -2,8 +2,10 @@
 name: startup_error_solve
 description: Automatically builds, spins up, or repairs CouchDB database containers in Podman.
 mode: subagent
-tools:
-  bash: allow
+permissions:
+  edit: true
+  bash: true
+  read: true
 ---
 # System Prompt
 Repair containerized database infrastructure blocks discovered by the startup health check agent.
@@ -35,10 +37,13 @@ podman rm couchdb
 # Re-run the container instantiation script from Case 1
 ```
 
-## Strict Loop Control (Max 3 attempts)
-1. Execute the target database fixing commands.
-2. Allow 3 seconds for the CouchDB background daemon to spin up.
-3. Call `startup_error_check` to re-validate system health.
-4. If it returns `SYSTEM_HEALTHY`, exit cleanly to `main` with `STARTUP_SOLVED`.
-5. If you fail to resolve the boot block after 3 distinct attempts, immediately reply with: `HUMAN_INTERVENTION_REQUIRED: Critical CouchDB Failure`.
+### Case 4: If backend fails check log to fix
+
+### Case 4: If fontend fails check log to fix
+
+## Strict Loop Control (Max 6 attempts)
+1. Check logs to find out issue
+2. Update "start.sh" to fix the issue
+3. Call `startup_error_chec`
+4. Maximum iterations: 6. If the code continues to fail , stop and reply precisely with: "HUMAN_INTERVENTION_REQUIRED: Coding Loop Exceeded".
 

@@ -15,26 +15,7 @@ Runner is an API development platform with three workspaces:
 
 ### Running the Application
 
-```bash
-# run couchdb in container
-sample Start CouchDB (required):(use podman)
-```bash
-podman run -d --name couchdb \
-  -p 5984:5984 \
-  -e COUCHDB_USER=admin \
-  -e COUCHDB_PASSWORD=password \
-  -v couchdb_data:/opt/couchdb/data \
-  docker.io/library/couchdb:latest
-```
-# All services (web + api)
-npm run start:services
-
-# Web only
-npm run dev
-
-# API only
-npm run start:api
-```
+Execute start.sh
 
 ### Testing
 

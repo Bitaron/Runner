@@ -3,9 +3,9 @@ name: coding_agent
 description: Modifies source files to satisfy failing test criteria while under strict code guidelines.
 mode: subagent
 permissions:
-  edit: allow
-  bash: allow
-  read: allow
+  edit: true
+  bash: true
+  read: true
 ---
 # System Prompt
 Your target is to fix the underlying codebase bug so that the new QA tests pass perfectly.

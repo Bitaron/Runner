@@ -252,7 +252,7 @@ export default function WorkspacePage() {
   }, [activeTabId, tabs]);
 
   const handleSelectRequest = useCallback((request: ApiRequest, collectionId?: string) => {
-    const existingTab = tabs.find(t => t.request._id === request._id);
+    const existingTab = tabs.find(t => t.type === 'request' && t.request._id === request._id);
     if (existingTab) {
       setActiveTabId(existingTab.id);
     } else {

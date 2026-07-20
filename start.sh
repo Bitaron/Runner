@@ -3,7 +3,7 @@
 # Runner - Start All Services Script
 # Usage: ./start.sh [options]
 # Options:
-#   -d, --docker    Start with Docker
+#   -d, --docker    Start with Podman/Docker (docker mode)
 #   -l, --local     Start locally (default)
 #   -h, --help      Show help
 
@@ -43,7 +43,7 @@ show_help() {
     echo "Usage: ./start.sh [options]"
     echo ""
     echo "Options:"
-    echo "  -d, --docker    Start with Docker (requires Docker and Docker Compose)"
+    echo "  -d, --docker    Start with Podman (requires podman and podman-compose)"
     echo "  -l, --local     Start locally (requires Node.js and CouchDB running)"
     echo "  -c, --couchdb   Start only CouchDB with Docker"
     echo "  -h, --help      Show this help message"
@@ -83,7 +83,8 @@ wait_for_service() {
     log_info "Waiting for $name to be ready..."
 
     while [ $attempt -le $max_attempts ]; do
-        if curl -s -o /dev/null -w "%{http_code}" "$url" 2>/dev/null | grep -q "200\|404"; then
+        # Use -4 to force IPv4 (CouchDB via pasta may not respond on IPv6)
+        if curl -4 -s -o /dev/null -w "%{http_code}" "$url" 2>/dev/null | grep -q "200\|404"; then
             log_success "$name is ready!"
             return 0
         fi
@@ -96,14 +97,26 @@ wait_for_service() {
 }
 
 start_couchdb_docker() {
-    log_info "Starting CouchDB with Docker..."
+    log_info "Starting CouchDB with Podman..."
     
-    if docker ps --format '{{.Names}}' | grep -q "^apiforge-couchdb$"; then
-        log_warning "CouchDB container already running"
+    # Check for existing couchdb container (either apiforge-couchdb or couchdb)
+    if podman ps --format '{{.Names}}' | grep -qE "^(apiforge-couchdb|couchdb)$"; then
+        local existing_name
+        existing_name=$(podman ps --format '{{.Names}}' | grep -E "^(apiforge-couchdb|couchdb)$" | head -1)
+        log_warning "CouchDB container '$existing_name' already running"
         return 0
     fi
 
-    docker run -d \
+    # Stop any existing container on port 5984 before starting
+    local existing_id
+    existing_id=$(podman ps --format '{{.ID}}\t{{.Names}}' | grep -E "\tapiforge-couchdb$|\tcouchdb$" | awk '{print $1}' | head -1)
+    if [ -n "$existing_id" ]; then
+        log_warning "Removing existing container..."
+        podman stop "$existing_id" 2>/dev/null || true
+        podman rm "$existing_id" 2>/dev/null || true
+    fi
+
+    podman run -d \
         --name apiforge-couchdb \
         -p $COUCHDB_PORT:5984 \
         -e COUCHDB_USER=admin \
@@ -121,11 +134,11 @@ start_couchdb_local() {
         return 0
     fi
 
-    if command -v docker &> /dev/null; then
+    if command -v podman &> /dev/null; then
         start_couchdb_docker
     else
         log_error "CouchDB is not running on port $COUCHDB_PORT"
-        log_info "Please start CouchDB manually or use Docker: docker run -d -p $COUCHDB_PORT:5984 -e COUCHDB_USER=admin -e COUCHDB_PASSWORD=password couchdb:3"
+        log_info "Please start CouchDB manually or use Podman: podman run -d -p $COUCHDB_PORT:5984 -e COUCHDB_USER=admin -e COUCHDB_PASSWORD=password couchdb:3"
         return 1
     fi
 }
@@ -183,7 +196,7 @@ start_web_local() {
 }
 
 start_docker() {
-    log_info "Starting all services with Docker..."
+    log_info "Starting all services with Podman..."
 
     cd "$(dirname "$0")/docker"
 
@@ -192,7 +205,7 @@ start_docker() {
         cp ../.env.example .env
     fi
 
-    docker-compose up -d
+    podman-compose up -d
 
     log_info "Waiting for services to be ready..."
     sleep 10
@@ -206,10 +219,10 @@ start_docker() {
 }
 
 stop_docker() {
-    log_info "Stopping Docker services..."
+    log_info "Stopping Podman services..."
     cd "$(dirname "$0")/docker"
-    docker-compose down
-    log_success "Docker services stopped"
+    podman-compose down
+    log_success "Podman services stopped"
 }
 
 stop_local() {
@@ -233,8 +246,11 @@ stop_local() {
 cleanup() {
     log_info "Cleaning up..."
     stop_local
-    docker stop apiforge-couchdb 2>/dev/null || true
-    docker rm apiforge-couchdb 2>/dev/null || true
+    # Stop and remove any couchdb containers
+    for container in apiforge-couchdb couchdb; do
+        podman stop "$container" 2>/dev/null || true
+        podman rm "$container" 2>/dev/null || true
+    done
     log_success "Cleanup complete"
 }
 
@@ -267,8 +283,8 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Trap for cleanup
-trap cleanup EXIT INT TERM
+# Trap for cleanup on signal only (not on normal exit)
+trap cleanup INT TERM
 
 # Main execution
 case $MODE in
