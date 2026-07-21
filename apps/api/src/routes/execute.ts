@@ -32,10 +32,11 @@ const applyAuth = (config: AxiosRequestConfig, auth: AuthConfig, params: KeyValu
       config.headers!['Authorization'] = `${auth.bearer?.prefix || 'Bearer'} ${auth.bearer?.token}`;
       break;
     
-    case 'basic':
+    case 'basic': {
       const credentials = Buffer.from(`${auth.basic?.username}:${auth.basic?.password}`).toString('base64');
       config.headers!['Authorization'] = `Basic ${credentials}`;
       break;
+    }
     
     case 'apikey':
       if (auth.apikey?.location === 'header') {
@@ -121,13 +122,14 @@ router.post('/', optionalAuth, async (req: AuthenticatedRequest, res: Response):
             }
             break;
           
-          case 'formdata':
+          case 'formdata': {
             const formData = new FormData();
             (body.formdata || []).filter((f) => !f.disabled).forEach((f) => {
               formData.append(f.key, f.value);
             });
             config.data = formData;
             break;
+          }
           
           case 'urlencoded':
             config.data = (body.urlencoded || [])

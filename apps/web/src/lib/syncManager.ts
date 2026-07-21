@@ -27,6 +27,8 @@ class SyncManager {
   private _isConnected = false;
   private _userId: string | null = null;
   private _workspaceId: string | null = null;
+  private _wsUrl: string | null = null;
+  private _token: string | null = null;
 
   get isConnected(): boolean {
     return this._isConnected;
@@ -35,6 +37,8 @@ class SyncManager {
   connect(wsUrl: string, token: string, userId: string, workspaceId: string): void {
     this._userId = userId;
     this._workspaceId = workspaceId;
+    this._wsUrl = wsUrl;
+    this._token = token;
 
     if (this.ws?.readyState === WebSocket.OPEN) {
       return;
@@ -81,14 +85,15 @@ class SyncManager {
   }
 
   private attemptReconnect(): void {
-    if (this.reconnectAttempts >= this.maxReconnectAttempts || !this._userId) {
-      console.log('SyncManager: Max reconnect attempts reached');
+    if (this.reconnectAttempts >= this.maxReconnectAttempts || !this._userId || !this._wsUrl || !this._token) {
+      console.log('SyncManager: Max reconnect attempts reached or missing credentials');
       return;
     }
 
     this.reconnectTimeout = setTimeout(() => {
       this.reconnectAttempts++;
       console.log(`SyncManager: Reconnecting (attempt ${this.reconnectAttempts})`);
+      this.connect(this._wsUrl!, this._token!, this._userId!, this._workspaceId!);
     }, this.reconnectDelay);
   }
 

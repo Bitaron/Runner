@@ -232,6 +232,7 @@ export interface User {
 }
 export interface HistoryEntry {
     _id: string;
+    _rev?: string;
     type: 'history';
     userId: string;
     workspaceId: string;

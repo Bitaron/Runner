@@ -195,7 +195,7 @@ export const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose, onS
           ) : query.trim() && !isLoading ? (
             <div className="text-center py-8 text-gray-500">
               <Search className="w-12 h-12 mx-auto mb-3 opacity-50" />
-              <p>No results found for "{query}"</p>
+              <p>No results found for &quot;{query}&quot;</p>
               <p className="text-sm mt-1">Try a different search term</p>
             </div>
           ) : (

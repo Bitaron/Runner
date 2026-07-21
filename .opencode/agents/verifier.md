@@ -1,6 +1,6 @@
 ---
 name: verifier
-mode: tool
+mode: subagent
 permissions:
   read: true
 ---

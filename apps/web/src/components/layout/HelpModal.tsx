@@ -60,7 +60,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
               <div className="space-y-3">
                 <div className="p-3 bg-[#2d2d2e] rounded-lg">
                   <h4 className="text-sm font-medium text-white mb-1">1. Create a Request</h4>
-                  <p className="text-xs text-gray-400">Click "New Request" or press ⌘N to create a new API request.</p>
+                  <p className="text-xs text-gray-400">Click &ldquo;New Request&rdquo; or press ⌘N to create a new API request.</p>
                 </div>
                 <div className="p-3 bg-[#2d2d2e] rounded-lg">
                   <h4 className="text-sm font-medium text-white mb-1">2. Enter API URL</h4>
@@ -76,7 +76,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
                 </div>
                 <div className="p-3 bg-[#2d2d2e] rounded-lg">
                   <h4 className="text-sm font-medium text-white mb-1">5. Send Request</h4>
-                  <p className="text-xs text-gray-400">Click "Send" or press ⌘+Enter to execute your request.</p>
+                  <p className="text-xs text-gray-400">Click &ldquo;Send&rdquo; or press ⌘+Enter to execute your request.</p>
                 </div>
               </div>
             </div>

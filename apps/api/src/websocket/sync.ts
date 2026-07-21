@@ -1,7 +1,7 @@
 import { Server as HttpServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { verifyAccessToken, TokenPayload } from '../utils/jwt';
-import { getDb } from '../config/database';
+import { getDb, getDocument } from '../config/database';
 import type { Workspace, Team } from '@apiforge/shared';
 
 interface ExtendedWebSocket extends WebSocket {
@@ -152,6 +152,7 @@ const handleMessage = async (ws: ExtendedWebSocket, message: IncomingMessage): P
       broadcastSyncEvent(ws.userId, message.workspaceId, {
         ...message.event,
         userId: ws.userId,
+        workspaceId: message.workspaceId,
         timestamp: Date.now(),
       } as SyncEvent);
       break;
@@ -215,38 +216,16 @@ export const broadcastSyncEvent = async (
 
 const checkWorkspaceAccess = async (userId: string, workspaceId: string): Promise<boolean> => {
   try {
-    const db = getDb();
-    
-    const workspaceResult = await db.view('app', 'by_type', {
-      key: 'workspace',
-      include_docs: true,
-    });
+    const workspace = await getDocument<Workspace>(workspaceId);
+    if (!workspace) return false;
 
-    const workspaces = workspaceResult.rows
-      .map((row) => row.doc as Workspace)
-      .filter((w) => w._id === workspaceId);
-
-    if (workspaces.length === 0) return false;
-
-    const workspace = workspaces[0];
-    
     if (workspace.ownerType === 'user' && workspace.ownerId === userId) {
       return true;
     }
 
     if (workspace.ownerType === 'team') {
-      const teamResult = await db.view('app', 'by_type', {
-        key: 'team',
-        include_docs: true,
-      });
-
-      const teams = teamResult.rows
-        .map((row) => row.doc as Team)
-        .filter((t) => t._id === workspace.ownerId);
-
-      if (teams.length === 0) return false;
-
-      const team = teams[0];
+      const team = await getDocument<Team>(workspace.ownerId);
+      if (!team) return false;
       return team.ownerId === userId || team.members.some((m) => m.userId === userId);
     }
 

@@ -1,6 +1,6 @@
 ---
 name: memory
-mode: tool
+mode: subagent
 permissions:
   read: true
   edit: true

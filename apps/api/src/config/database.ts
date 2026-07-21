@@ -1,4 +1,4 @@
-import nano, { ServerScope, DocumentScope } from 'nano';
+import nano, { DocumentScope } from 'nano';
 import type { CouchDocument, User, Team, Workspace, Collection, ApiRequest, Environment, HistoryEntry, TrashItem, WebSocketRequest } from '@apiforge/shared';
 
 const COUCH_URL = process.env.COUCHDB_URL || 'http://admin:password@127.0.0.1:5984';

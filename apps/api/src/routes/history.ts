@@ -74,7 +74,10 @@ router.delete('/', authMiddleware, async (req: AuthenticatedRequest, res: Respon
       .filter((row) => (row.doc as HistoryEntry).type === 'history');
 
     for (const row of historyDocs) {
-      await db.destroy(row.id, (row as any).value?.rev);
+      const doc = row.doc as HistoryEntry;
+      if (doc && doc._rev) {
+        await db.destroy(row.id, doc._rev);
+      }
     }
 
     res.json({ success: true, message: 'History cleared' });

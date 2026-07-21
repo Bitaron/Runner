@@ -37,8 +37,14 @@ router.post('/postman', authMiddleware, async (req: AuthenticatedRequest, res: R
       description: postmanCollection.info.description,
       variables: postmanCollection.variable || [],
       auth: postmanCollection.auth,
-      preRequestScript: postmanCollection.event?.find((e) => e.listen === 'prerequest')?.script?.exec as string,
-      testScript: postmanCollection.event?.find((e) => e.listen === 'test')?.script?.exec as string,
+      preRequestScript: (() => {
+        const exec = postmanCollection.event?.find((e) => e.listen === 'prerequest')?.script?.exec;
+        return Array.isArray(exec) ? exec.join('\n') : (exec as string | undefined);
+      })(),
+      testScript: (() => {
+        const exec = postmanCollection.event?.find((e) => e.listen === 'test')?.script?.exec;
+        return Array.isArray(exec) ? exec.join('\n') : (exec as string | undefined);
+      })(),
       folders: [],
       requests: [],
       createdAt: new Date().toISOString(),
@@ -118,8 +124,14 @@ router.post('/postman', authMiddleware, async (req: AuthenticatedRequest, res: R
             headers,
             body,
             auth: postmanItem.request.auth || { type: 'none' },
-            preRequestScript: postmanItem.event?.find((e) => e.listen === 'prerequest')?.script?.exec as string,
-            testScript: postmanItem.event?.find((e) => e.listen === 'test')?.script?.exec as string,
+            preRequestScript: (() => {
+              const exec = postmanItem.event?.find((e) => e.listen === 'prerequest')?.script?.exec;
+              return Array.isArray(exec) ? exec.join('\n') : (exec as string | undefined);
+            })(),
+            testScript: (() => {
+              const exec = postmanItem.event?.find((e) => e.listen === 'test')?.script?.exec;
+              return Array.isArray(exec) ? exec.join('\n') : (exec as string | undefined);
+            })(),
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
             createdBy: req.user.userId,
