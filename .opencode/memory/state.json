@@ -1,0 +1,11 @@
+{
+  "iteration":1,
+  "phase":"Startup",
+  "successful_checks":[],
+  "failed_checks":[],
+  "modified_files":[],
+  "attempted_fixes":[],
+  "rejected_hypotheses":[],
+  "current_root_cause":null,
+  "confidence":0.0
+}

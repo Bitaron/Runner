@@ -5,6 +5,7 @@ import compression from 'compression';
 import morgan from 'morgan';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
+import path from 'path';
 import dotenv from 'dotenv';
 import { initDatabase } from './config/database';
 import { initSyncWebSocket } from './websocket';
@@ -21,7 +22,7 @@ import importExportRoutes from './routes/importExport';
 import uploadRoutes from './routes/upload';
 import searchRoutes from './routes/search';
 
-dotenv.config();
+dotenv.config({ path: path.join(__dirname, '../../.env') });
 
 const app = express();
 const PORT = process.env.PORT || 4000;

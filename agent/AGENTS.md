@@ -314,3 +314,15 @@ it('should add item', () => {
   <div>Content</div>
 </Modal>
 ```
+
+### OpenCode Agent Architecture
+
+Orchestrator
+ -> Executor Tool
+ -> Failure Analyzer
+ -> Root Cause Agent
+ -> Domain Fixer
+ -> Code Reviewer
+ -> Executor Verify
+ -> Memory Update
+ -> Repeat
