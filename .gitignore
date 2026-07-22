@@ -45,4 +45,4 @@ apps/api/uploads/*
 .vercel
 .turbo
 package-lock.json
-
+.playwright-mcp
