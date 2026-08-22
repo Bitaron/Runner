@@ -17,12 +17,17 @@ export interface SyncEvent {
 
 type EventHandler = (event: SyncEvent) => void;
 
+const BASE_RECONNECT_DELAY = 5000;
+const MAX_RECONNECT_DELAY = 30000;
+
 class SyncManager {
   private ws: WebSocket | null = null;
   private reconnectTimeout: NodeJS.Timeout | null = null;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
-  private reconnectDelay = 5000;
+  private reconnectBaseDelay = BASE_RECONNECT_DELAY;
+  private reconnectMaxDelay = MAX_RECONNECT_DELAY;
+  private refCount = 0;
   private handlers: Set<EventHandler> = new Set();
   private _isConnected = false;
   private _userId: string | null = null;
@@ -35,23 +40,41 @@ class SyncManager {
   }
 
   connect(wsUrl: string, token: string, userId: string, workspaceId: string): void {
+    this.refCount++;
     this._userId = userId;
-    this._workspaceId = workspaceId;
     this._wsUrl = wsUrl;
     this._token = token;
 
-    if (this.ws?.readyState === WebSocket.OPEN) {
+    if (this.ws && this.ws.readyState !== WebSocket.CLOSED) {
+      const workspaceChanged = this._workspaceId !== workspaceId;
+      this._workspaceId = workspaceId;
+      if (workspaceChanged && this.ws.readyState === WebSocket.OPEN) {
+        this.ws.send(JSON.stringify({ type: 'subscribe', workspaceId }));
+      }
       return;
     }
 
-    this.ws = new WebSocket(wsUrl);
+    this._workspaceId = workspaceId;
+
+    this.openSocket();
+  }
+
+  private openSocket(): void {
+    if (!this._wsUrl) return;
+
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+
+    this.ws = new WebSocket(this._wsUrl);
 
     this.ws.onopen = () => {
       console.log('SyncManager: WebSocket connected');
       this._isConnected = true;
       this.reconnectAttempts = 0;
 
-      this.ws?.send(JSON.stringify({ type: 'auth', token }));
+      this.ws?.send(JSON.stringify({ type: 'auth', token: this._token }));
     };
 
     this.ws.onmessage = (event) => {
@@ -76,7 +99,9 @@ class SyncManager {
     this.ws.onclose = () => {
       console.log('SyncManager: WebSocket disconnected');
       this._isConnected = false;
-      this.attemptReconnect();
+      if (this.refCount > 0) {
+        this.attemptReconnect();
+      }
     };
 
     this.ws.onerror = (error) => {
@@ -90,20 +115,32 @@ class SyncManager {
       return;
     }
 
+    const delay = Math.min(
+      this.reconnectBaseDelay * 2 ** this.reconnectAttempts + Math.random() * this.reconnectBaseDelay,
+      this.reconnectMaxDelay
+    );
+
     this.reconnectTimeout = setTimeout(() => {
+      this.reconnectTimeout = null;
       this.reconnectAttempts++;
       console.log(`SyncManager: Reconnecting (attempt ${this.reconnectAttempts})`);
-      this.connect(this._wsUrl!, this._token!, this._userId!, this._workspaceId!);
-    }, this.reconnectDelay);
+      this.openSocket();
+    }, delay);
   }
 
   disconnect(): void {
+    this.refCount = Math.max(0, this.refCount - 1);
+    if (this.refCount > 0) return;
+
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
     }
     if (this.ws) {
-      this.ws.close();
+      const ws = this.ws;
       this.ws = null;
+      ws.onclose = null;
+      ws.close();
     }
     this._isConnected = false;
   }

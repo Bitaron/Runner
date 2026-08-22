@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { Menu, Terminal, X } from 'lucide-react';
 import { Sidebar } from '@/components/sidebar/Sidebar';
 import { RequestBuilder } from '@/components/request/RequestBuilder';
 import { ResponseViewer } from '@/components/response/ResponseViewer';
@@ -21,6 +22,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { apiClient } from '@/lib/api';
 import { syncManager } from '@/lib/syncManager';
 import { cn } from '@/lib/utils';
+import { useMediaQuery } from '@/hooks/useMediaQuery';
 import type { ApiRequest, Collection, Response, Workspace, Folder, Environment } from '@apiforge/shared';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -45,6 +47,11 @@ interface FolderTab {
 
 type Tab = RequestTab | CollectionTab | FolderTab;
 
+const mergeServerFirst = <T extends { _id: string }>(serverItems: T[], localItems: T[]): T[] => {
+  const serverIds = new Set(serverItems.map((item) => item._id));
+  return [...serverItems, ...localItems.filter((item) => !serverIds.has(item._id))];
+};
+
 export default function WorkspacePage() {
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
@@ -68,44 +75,79 @@ export default function WorkspacePage() {
   const [verticalSplitPosition, setVerticalSplitPosition] = useState(50);
   const [isDragging, setIsDragging] = useState(false);
   const [isDraggingVertical, setIsDraggingVertical] = useState(false);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [showConsole, setShowConsole] = useState(false);
+  const [appLogs, setAppLogs] = useState<string[]>([]);
 
-  const { collections, addCollection, addRequest, updateRequest, addToHistory, createNewRequest } = useCollectionsStore();
-  const { currentWorkspace, workspaces, setWorkspaces, setCurrentWorkspace, environments, globalVariables, addEnvironment, updateEnvironment, removeEnvironment } = useWorkspaceStore();
-  const { user, tokens, isAnonymous, logout } = useAuthStore();
+  const isMobile = useMediaQuery('(max-width: 767px)');
+  const isTablet = useMediaQuery('(min-width: 768px) and (max-width: 1023px)');
 
-  const getMethodColor = (method: string) => {
-    const colors: Record<string, string> = {
-      GET: 'bg-green-600 text-white',
-      POST: 'bg-[#ff6b35] text-white',
-      PUT: 'bg-blue-600 text-white',
-      PATCH: 'bg-yellow-600 text-white',
-      DELETE: 'bg-red-600 text-white',
-      HEAD: 'bg-gray-600 text-white',
-      OPTIONS: 'bg-purple-600 text-white',
-    };
-    return colors[method] || 'bg-gray-600 text-white';
-  };
+  const { addCollection, addRequest, updateRequest, addToHistory, createNewRequest } = useCollectionsStore();
+  const { currentWorkspace, workspaces, setWorkspaces, setCurrentWorkspace, environments, globalVariables, addEnvironment, updateEnvironment, removeEnvironment, setEnvironments } = useWorkspaceStore();
+  const { user, tokens, isAnonymous, isAuthenticated, hasHydrated, logout } = useAuthStore();
 
   const currentTab = tabs.find(t => t.id === activeTabId) as Tab | undefined;
   const currentRequest = currentTab?.type === 'request' ? currentTab.request : null;
 
+  const workspacesLoadedRef = useRef(false);
+
   useEffect(() => {
+    if (!hasHydrated || !isAuthenticated) {
+      setIsInitialLoading(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    const loadWorkspaceData = async () => {
+      const workspaceId = useWorkspaceStore.getState().currentWorkspace?._id;
+      const params = workspaceId ? { workspaceId } : undefined;
+      const [collectionsRes, environmentsRes] = await Promise.all([
+        apiClient.get<Collection[]>('/api/collections', params),
+        apiClient.get<Environment[]>('/api/environments', params),
+      ]);
+      if (cancelled) return;
+      if (collectionsRes.success && collectionsRes.data) {
+        useCollectionsStore.getState().setCollections(
+          mergeServerFirst(collectionsRes.data, useCollectionsStore.getState().collections)
+        );
+      }
+      if (environmentsRes.success && environmentsRes.data) {
+        setEnvironments(mergeServerFirst(environmentsRes.data, useWorkspaceStore.getState().environments));
+      }
+    };
+
     const loadInitialData = async () => {
+      setIsInitialLoading(true);
       try {
-        const workspacesRes = await apiClient.get<Workspace[]>('/api/workspaces');
-        if (workspacesRes.success && workspacesRes.data) {
-          setWorkspaces(workspacesRes.data);
-          if (workspacesRes.data.length > 0) {
-            setCurrentWorkspace(workspacesRes.data[0]);
+        if (!workspacesLoadedRef.current) {
+          const workspacesRes = await apiClient.get<Workspace[]>('/api/workspaces');
+          if (!cancelled && workspacesRes.success && workspacesRes.data) {
+            setWorkspaces(workspacesRes.data);
+            const current = useWorkspaceStore.getState().currentWorkspace;
+            if ((!current || !workspacesRes.data.some((w) => w._id === current._id)) && workspacesRes.data.length > 0) {
+              setCurrentWorkspace(workspacesRes.data[0]);
+            }
+            workspacesLoadedRef.current = true;
           }
         }
-      } catch (error) {
-        console.error('Failed to load initial data:', error);
+        await loadWorkspaceData();
+      } catch {
+        // keep persisted local state when the API rejects or is unreachable
+      } finally {
+        if (!cancelled) {
+          setIsInitialLoading(false);
+        }
       }
     };
 
     loadInitialData();
-  }, [setWorkspaces, setCurrentWorkspace]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hasHydrated, isAuthenticated, currentWorkspace?._id, setWorkspaces, setCurrentWorkspace, setEnvironments]);
 
   useEffect(() => {
     if (user && tokens?.accessToken && currentWorkspace && !isAnonymous) {
@@ -157,6 +199,39 @@ export default function WorkspacePage() {
 
     return unsubscribe;
   }, []);
+
+  useEffect(() => {
+    setSidebarCollapsed(isTablet);
+  }, [isTablet]);
+
+  useEffect(() => {
+    if (!isMobile) {
+      setMobileSidebarOpen(false);
+    }
+  }, [isMobile]);
+
+  useEffect(() => {
+    if (!mobileSidebarOpen) return undefined;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setMobileSidebarOpen(false);
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [mobileSidebarOpen]);
+
+  useEffect(() => {
+    document.title = currentWorkspace
+      ? `${currentWorkspace.name} - Runner`
+      : 'Runner - API Development Platform';
+  }, [currentWorkspace]);
+
+  const appendAppLog = useCallback((message: string) => {
+    const timestamp = new Date().toLocaleTimeString();
+    setAppLogs((prev) => [...prev.slice(-99), `[${timestamp}] ${message}`]);
+  }, []);
+
 
   const handleNewRequest = useCallback(() => {
     const userId = user?._id || 'anonymous';
@@ -229,13 +304,9 @@ export default function WorkspacePage() {
   }, []);
 
   const handleDeleteFolder = useCallback((collectionId: string, folderId: string) => {
-    const collection = collections.find(c => c._id === collectionId);
-    if (collection) {
-      const updatedFolders = collection.folders.filter(f => f._id !== folderId);
-      useCollectionsStore.getState().updateCollection(collectionId, { folders: updatedFolders });
-      toast.success('Folder deleted');
-    }
-  }, [collections]);
+    useCollectionsStore.getState().removeFolder(collectionId, folderId);
+    toast.success('Folder deleted');
+  }, []);
 
   const handleTabSelect = useCallback((tabId: string) => {
     setActiveTabId(tabId);
@@ -442,130 +513,93 @@ export default function WorkspacePage() {
     return logs;
   }, []);
 
-  const handleSendRequest = useCallback(async () => {
-    if (!currentRequest || !currentRequest.url.trim()) return;
+  const buildRequestPayload = useCallback(async (request: ApiRequest) => {
+    let effectiveRequest = request;
 
-    setIsLoading(true);
-    setResponse(null);
-    setConsoleLogs([]);
-    setTestResults([]);
+    if (request.preRequestScript) {
+      const scriptRequest: ApiRequest = {
+        ...request,
+        headers: [...request.headers],
+        params: [...request.params],
+      };
+      const scriptLogs = executeScript(request.preRequestScript, { request: scriptRequest });
+      setConsoleLogs((prev) => [...prev, ...scriptLogs]);
 
-    try {
-      if (currentRequest.preRequestScript) {
-        const scriptLogs = executeScript(currentRequest.preRequestScript, { request: currentRequest });
-        setConsoleLogs((prev) => [...prev, ...scriptLogs]);
-      }
-
-      const authHeaders: Record<string, string> = {};
-      if (currentRequest.auth.type === 'bearer' && currentRequest.auth.bearer) {
-        const prefix = currentRequest.auth.bearer.prefix || 'Bearer';
-        authHeaders['Authorization'] = `${prefix} ${currentRequest.auth.bearer.token}`;
-      } else if (currentRequest.auth.type === 'basic' && currentRequest.auth.basic) {
-        const credentials = btoa(`${currentRequest.auth.basic.username}:${currentRequest.auth.basic.password}`);
-        authHeaders['Authorization'] = `Basic ${credentials}`;
-      } else if (currentRequest.auth.type === 'apikey' && currentRequest.auth.apikey) {
-        if (currentRequest.auth.apikey.location === 'header') {
-          authHeaders[currentRequest.auth.apikey.key] = currentRequest.auth.apikey.value;
+      const mutableFields = ['method', 'url', 'headers', 'params', 'body', 'auth'] as const;
+      const updates: Partial<ApiRequest> = {};
+      mutableFields.forEach((field) => {
+        if (scriptRequest[field] !== request[field]) {
+          (updates as Record<string, unknown>)[field] = scriptRequest[field];
         }
-      }
-
-      const response = await apiClient.post<Response>('/api/execute', {
-        method: currentRequest.method,
-        url: currentRequest.url,
-        headers: [...currentRequest.headers.filter((h) => !h.disabled), ...Object.entries(authHeaders).map(([key, value]) => ({ key, value }))],
-        params: currentRequest.params.filter((p) => !p.disabled),
-        body: currentRequest.body,
-        timeout: 30000,
       });
+      effectiveRequest = { ...request, ...updates };
+    }
+
+    const authHeaders: Record<string, string> = {};
+    if (effectiveRequest.auth.type === 'bearer' && effectiveRequest.auth.bearer) {
+      const prefix = effectiveRequest.auth.bearer.prefix || 'Bearer';
+      authHeaders['Authorization'] = `${prefix} ${effectiveRequest.auth.bearer.token}`;
+    } else if (effectiveRequest.auth.type === 'basic' && effectiveRequest.auth.basic) {
+      const credentials = btoa(`${effectiveRequest.auth.basic.username}:${effectiveRequest.auth.basic.password}`);
+      authHeaders['Authorization'] = `Basic ${credentials}`;
+    } else if (effectiveRequest.auth.type === 'apikey' && effectiveRequest.auth.apikey) {
+      if (effectiveRequest.auth.apikey.location === 'header') {
+        authHeaders[effectiveRequest.auth.apikey.key] = effectiveRequest.auth.apikey.value;
+      }
+    }
+
+    const payload = {
+      method: effectiveRequest.method,
+      url: effectiveRequest.url,
+      headers: [...effectiveRequest.headers.filter((h) => !h.disabled), ...Object.entries(authHeaders).map(([key, value]) => ({ key, value }))],
+      params: effectiveRequest.params.filter((p) => !p.disabled),
+      body: effectiveRequest.body,
+      timeout: 30000,
+    };
+
+    return { request: effectiveRequest, authHeaders, payload };
+  }, [executeScript]);
+
+  const createErrorState = useCallback((message: string): Response => ({
+    status: 0,
+    statusText: 'Error',
+    headers: {},
+    body: message,
+    contentType: 'text/plain',
+    time: 0,
+    size: 0,
+    cookies: [],
+  }), []);
+
+  const executeViewRequest = useCallback(
+    async ({ request, payload }: { request: ApiRequest; payload: Record<string, unknown> }) => {
+      const response = await apiClient.post<Response>('/api/execute', payload);
 
       if (response.success && response.data) {
         setResponse(response.data);
+        appendAppLog(`${request.method} ${request.url} → ${response.data.status} ${response.data.statusText} (${response.data.time}ms)`);
 
-        if (currentRequest.testScript) {
-          const scriptLogs = executeScript(currentRequest.testScript, { request: currentRequest, response: response.data });
+        if (request.testScript) {
+          const scriptLogs = executeScript(request.testScript, { request, response: response.data });
           setConsoleLogs((prev) => [...prev, ...scriptLogs]);
         }
       } else {
-        setResponse({
-          status: 0,
-          statusText: 'Error',
-          headers: {},
-          body: response.error || 'Unknown error occurred',
-          contentType: 'text/plain',
-          time: 0,
-          size: 0,
-          cookies: [],
-        });
+        setResponse(createErrorState(response.error || 'Unknown error occurred'));
+        appendAppLog(`${request.method} ${request.url} → Error: ${response.error || 'Unknown error'}`);
       }
+    },
+    [executeScript, appendAppLog, createErrorState]
+  );
 
-      addToHistory(currentRequest);
-    } catch (error) {
-      setResponse({
-        status: 0,
-        statusText: 'Error',
-        headers: {},
-        body: error instanceof Error ? error.message : 'Request failed',
-        contentType: 'text/plain',
-        time: 0,
-        size: 0,
-        cookies: [],
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  }, [currentRequest, executeScript, addToHistory]);
+  const executeDownloadRequest = useCallback(
+    async ({ request, payload }: { request: ApiRequest; payload: Record<string, unknown> }) => {
+      const startedAt = Date.now();
 
-  const handleSendAndDownload = useCallback(async () => {
-    if (!currentRequest || !currentRequest.url.trim()) return;
-
-    setIsLoading(true);
-    setResponse(null);
-    setConsoleLogs([]);
-    setTestResults([]);
-
-    try {
-      if (currentRequest.preRequestScript) {
-        const scriptLogs = executeScript(currentRequest.preRequestScript, { request: currentRequest });
-        setConsoleLogs((prev) => [...prev, ...scriptLogs]);
-      }
-
-      const authHeaders: Record<string, string> = {};
-      if (currentRequest.auth.type === 'bearer' && currentRequest.auth.bearer) {
-        const prefix = currentRequest.auth.bearer.prefix || 'Bearer';
-        authHeaders['Authorization'] = `${prefix} ${currentRequest.auth.bearer.token}`;
-      } else if (currentRequest.auth.type === 'basic' && currentRequest.auth.basic) {
-        const credentials = btoa(`${currentRequest.auth.basic.username}:${currentRequest.auth.basic.password}`);
-        authHeaders['Authorization'] = `Basic ${credentials}`;
-      } else if (currentRequest.auth.type === 'apikey' && currentRequest.auth.apikey) {
-        if (currentRequest.auth.apikey.location === 'header') {
-          authHeaders[currentRequest.auth.apikey.key] = currentRequest.auth.apikey.value;
-        }
-      }
-
-      // Build URL with params
-      let url = currentRequest.url;
-      const params = currentRequest.params.filter((p) => !p.disabled && p.key);
-      if (params.length > 0) {
-        const searchParams = new URLSearchParams();
-        params.forEach((p) => searchParams.append(p.key, p.value));
-        url += (url.includes('?') ? '&' : '?') + searchParams.toString();
-      }
-
-      // Make direct fetch request for download
+      // Direct fetch so the raw body can be saved as a file
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/api/execute`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...authHeaders,
-        },
-        body: JSON.stringify({
-          method: currentRequest.method,
-          url: currentRequest.url,
-          headers: [...currentRequest.headers.filter((h) => !h.disabled), ...Object.entries(authHeaders).map(([key, value]) => ({ key, value }))],
-          params: currentRequest.params.filter((p) => !p.disabled),
-          body: currentRequest.body,
-          timeout: 30000,
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
       });
 
       if (response.ok) {
@@ -579,10 +613,8 @@ export default function WorkspacePage() {
           }
         }
 
-        // Get content type
         const contentType = response.headers.get('content-type') || 'application/octet-stream';
 
-        // Download the file
         const blob = await response.blob();
         const downloadUrl = window.URL.createObjectURL(blob);
         const link = document.createElement('a');
@@ -593,47 +625,67 @@ export default function WorkspacePage() {
         document.body.removeChild(link);
         window.URL.revokeObjectURL(downloadUrl);
 
-        // Set a minimal response for display
         setResponse({
           status: response.status,
           statusText: response.statusText,
           headers: Object.fromEntries(response.headers.entries()),
           body: `Downloaded: ${filename} (${(blob.size / 1024).toFixed(2)} KB)`,
           contentType,
-          time: 0,
+          time: Date.now() - startedAt,
           size: blob.size,
           cookies: [],
         });
+        appendAppLog(`${request.method} ${request.url} → ${response.status} ${response.statusText} (downloaded ${filename})`);
       } else {
         const errorText = await response.text();
         setResponse({
+          ...createErrorState(errorText || 'Download failed'),
           status: response.status,
           statusText: response.statusText,
           headers: Object.fromEntries(response.headers.entries()),
-          body: errorText || 'Download failed',
-          contentType: 'text/plain',
-          time: 0,
-          size: 0,
-          cookies: [],
         });
+        appendAppLog(`${request.method} ${request.url} → Error: ${response.status} ${response.statusText}`);
       }
+    },
+    [appendAppLog, createErrorState]
+  );
 
-      addToHistory(currentRequest);
-    } catch (error) {
-      setResponse({
-        status: 0,
-        statusText: 'Error',
-        headers: {},
-        body: error instanceof Error ? error.message : 'Download failed',
-        contentType: 'text/plain',
-        time: 0,
-        size: 0,
-        cookies: [],
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  }, [currentRequest, executeScript, addToHistory]);
+  const runSendFlow = useCallback(
+    async (mode: 'view' | 'download') => {
+      if (!currentRequest || !currentRequest.url.trim()) return;
+
+      setIsLoading(true);
+      setResponse(null);
+      setConsoleLogs([]);
+      setTestResults([]);
+
+      try {
+        const built = await buildRequestPayload(currentRequest);
+
+        if (mode === 'download') {
+          await executeDownloadRequest(built);
+        } else {
+          await executeViewRequest(built);
+        }
+
+        addToHistory(built.request);
+      } catch (error) {
+        setResponse(createErrorState(error instanceof Error ? error.message : 'Request failed'));
+        appendAppLog(`${currentRequest?.method ?? ''} ${currentRequest?.url ?? ''} failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [currentRequest, buildRequestPayload, executeViewRequest, executeDownloadRequest, addToHistory, appendAppLog, createErrorState]
+  );
+
+  const handleSendRequest = useCallback(() => {
+    void runSendFlow('view');
+  }, [runSendFlow]);
+
+  const handleSendAndDownload = useCallback(() => {
+    void runSendFlow('download');
+  }, [runSendFlow]);
 
   const handleCancelRequest = useCallback(() => {
     // Cancel the current request by setting isLoading to false
@@ -641,49 +693,89 @@ export default function WorkspacePage() {
     setIsLoading(false);
   }, []);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     syncManager.disconnect();
+    try {
+      await apiClient.post('/api/auth/logout');
+    } catch {
+      // Server unreachable; clear local state anyway
+    }
     logout();
     window.location.href = '/login';
   };
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="relative flex h-screen overflow-hidden">
       <SearchShortcut onOpen={() => setShowSearch(true)} />
-      
-      <Sidebar
-        onSelectRequest={handleSelectRequest}
-        onSelectHistory={handleSelectHistory}
-        onSelectCollection={(collection) => {
-          setSelectedCollection(collection);
-          setSelectedFolder(null);
-          handleSelectCollection(collection);
-        }}
-        onSelectFolder={(collection, folder) => {
-          setSelectedCollection(collection);
-          setSelectedFolder(folder);
-          handleSelectFolder(collection, folder);
-        }}
-        onSelectEnvironment={(environment) => {
-          setSelectedEnvironment(environment);
-          setShowGlobals(false);
-        }}
-        onSelectGlobals={() => {
-          setSelectedEnvironment(null);
-          setShowGlobals(true);
-        }}
-        onCreateNew={handleCreateNew}
-        onDeleteCollection={handleDeleteCollection}
-        onDeleteFolder={handleDeleteFolder}
-        activeCollectionId={selectedCollection?._id}
-        activeFolderId={selectedFolder?._id}
-        width={sidebarWidth}
-        onWidthChange={setSidebarWidth}
-        isCollapsed={sidebarCollapsed}
-        onCollapseChange={setSidebarCollapsed}
-      />
 
-      <div className="flex-1 flex flex-col overflow-hidden">
+      {mobileSidebarOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/60 md:hidden"
+          onClick={() => setMobileSidebarOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      <div
+        id="workspace-sidebar"
+        className={cn(
+          'shrink-0 h-full',
+          'max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-50 max-md:w-[85vw] max-md:max-w-[320px]',
+          'max-md:shadow-2xl max-md:transition-transform max-md:duration-200',
+          mobileSidebarOpen ? 'max-md:translate-x-0' : 'max-md:-translate-x-full max-md:pointer-events-none'
+        )}
+      >
+        <Sidebar
+          onSelectRequest={handleSelectRequest}
+          onSelectHistory={handleSelectHistory}
+          onSelectCollection={(collection) => {
+            setSelectedCollection(collection);
+            setSelectedFolder(null);
+            handleSelectCollection(collection);
+          }}
+          onSelectFolder={(collection, folder) => {
+            setSelectedCollection(collection);
+            setSelectedFolder(folder);
+            handleSelectFolder(collection, folder);
+          }}
+          onSelectEnvironment={(environment) => {
+            setSelectedEnvironment(environment);
+            setShowGlobals(false);
+          }}
+          onSelectGlobals={() => {
+            setSelectedEnvironment(null);
+            setShowGlobals(true);
+          }}
+          onCreateNew={handleCreateNew}
+          onDeleteCollection={handleDeleteCollection}
+          onDeleteFolder={handleDeleteFolder}
+          activeCollectionId={selectedCollection?._id}
+          activeFolderId={selectedFolder?._id}
+          width={sidebarWidth}
+          onWidthChange={setSidebarWidth}
+          isCollapsed={sidebarCollapsed}
+          onCollapseChange={setSidebarCollapsed}
+          className="max-md:!w-full"
+        />
+      </div>
+
+      <div className="flex-1 flex flex-col overflow-hidden relative">
+        <div className="flex md:hidden items-center gap-2 h-10 px-2 bg-[#262627] border-b border-[#3d3d3d]">
+          <button
+            type="button"
+            onClick={() => setMobileSidebarOpen(true)}
+            aria-label="Open navigation menu"
+            aria-expanded={mobileSidebarOpen}
+            aria-controls="workspace-sidebar"
+            className="p-2 text-gray-400 hover:text-white hover:bg-[#3d3d3d] rounded transition-colors"
+          >
+            <Menu className="w-4 h-4" />
+          </button>
+          <span className="text-sm font-semibold text-white truncate">
+            {currentWorkspace?.name || 'Runner'}
+          </span>
+        </div>
+
         <TopBar
           onSearchOpen={() => setShowSearch(true)}
           onTeamOpen={() => setShowTeamModal(true)}
@@ -698,7 +790,6 @@ export default function WorkspacePage() {
             onTabSelect={handleTabSelect}
             onTabClose={handleTabClose}
             onNewTab={handleNewRequest}
-            getMethodColor={getMethodColor}
           />
         )}
 
@@ -750,9 +841,25 @@ export default function WorkspacePage() {
                 )}
               </div>
               <div
-                className="absolute top-0 bottom-0 w-1 bg-[#3d3d3d] hover:bg-[#ff6b35] cursor-col-resize z-10"
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Resize request and response panes"
+                aria-valuenow={Math.round(splitPosition)}
+                aria-valuemin={20}
+                aria-valuemax={80}
+                tabIndex={0}
+                className="absolute top-0 bottom-0 w-1 bg-[#3d3d3d] hover:bg-[#ff6b35] cursor-col-resize z-10 focus-visible:bg-[#ff6b35] focus:outline-none"
                 style={{ left: `${splitPosition}%` }}
                 onMouseDown={() => setIsDragging(true)}
+                onKeyDown={(e) => {
+                  if (e.key === 'ArrowLeft') {
+                    e.preventDefault();
+                    setSplitPosition((prev) => Math.max(20, prev - 2));
+                  } else if (e.key === 'ArrowRight') {
+                    e.preventDefault();
+                    setSplitPosition((prev) => Math.min(80, prev + 2));
+                  }
+                }}
               />
               <div className="absolute inset-0 overflow-y-auto" style={{ left: `${splitPosition}%` }}>
                 {currentTab?.type === 'request' && activePanel === 'http' && (
@@ -809,9 +916,25 @@ export default function WorkspacePage() {
                 )}
               </div>
               <div
-                className="absolute left-0 right-0 h-1 bg-[#3d3d3d] hover:bg-[#ff6b35] cursor-row-resize z-10"
+                role="separator"
+                aria-orientation="horizontal"
+                aria-label="Resize request and response panes"
+                aria-valuenow={Math.round(verticalSplitPosition)}
+                aria-valuemin={20}
+                aria-valuemax={80}
+                tabIndex={0}
+                className="absolute left-0 right-0 h-1 bg-[#3d3d3d] hover:bg-[#ff6b35] cursor-row-resize z-10 focus-visible:bg-[#ff6b35] focus:outline-none"
                 style={{ top: `${verticalSplitPosition}%` }}
                 onMouseDown={() => setIsDraggingVertical(true)}
+                onKeyDown={(e) => {
+                  if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    setVerticalSplitPosition((prev) => Math.max(20, prev - 2));
+                  } else if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    setVerticalSplitPosition((prev) => Math.min(80, prev + 2));
+                  }
+                }}
               />
               <div 
                 className="absolute inset-0 overflow-y-auto"
@@ -830,16 +953,50 @@ export default function WorkspacePage() {
           )}
         </div>
 
+        {showConsole && (
+          <div
+            role="region"
+            aria-label="Console output"
+            className="flex flex-col h-56 shrink-0 bg-[#1e1e1e] border-t border-[#3d3d3d]"
+          >
+            <div className="flex items-center justify-between px-3 py-1.5 bg-[#262627] border-b border-[#3d3d3d]">
+              <div className="flex items-center gap-2 text-xs text-gray-400">
+                <Terminal className="w-3.5 h-3.5" />
+                <span>Console</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowConsole(false)}
+                aria-label="Close console"
+                className="p-1 text-gray-400 hover:text-white hover:bg-[#3d3d3d] rounded transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-3 font-mono text-xs text-gray-300 space-y-1">
+              {[...appLogs, ...consoleLogs].length === 0 ? (
+                <p className="text-gray-500">Console ready</p>
+              ) : (
+                [...appLogs, ...consoleLogs].map((entry, index) => (
+                  <div key={index} className="whitespace-pre-wrap break-all">
+                    {entry}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+
         <BottomBar
           layout={layout}
           onLayoutChange={setLayout}
           onHelpOpen={() => setShowHelp(true)}
-          onConsoleOpen={() => {}}
+          onConsoleOpen={() => setShowConsole((prev) => !prev)}
         />
       </div>
 
       {selectedCollection && (
-        <div className="w-[500px] border-l border-[#3d3d3d]">
+        <div className="fixed inset-y-0 right-0 z-40 w-full max-w-[500px] bg-[#262627] shadow-2xl border-l border-[#3d3d3d] sm:static sm:z-auto sm:w-[320px] sm:max-w-none sm:shadow-none md:w-[380px] lg:w-[500px]">
           <CollectionPanel
             collection={selectedCollection}
             folder={selectedFolder || undefined}
@@ -862,7 +1019,7 @@ export default function WorkspacePage() {
       )}
 
       {(selectedEnvironment || showGlobals) && (
-        <div className="w-[500px] border-l border-[#3d3d3d]">
+        <div className="fixed inset-y-0 right-0 z-40 w-full max-w-[500px] bg-[#262627] shadow-2xl border-l border-[#3d3d3d] sm:static sm:z-auto sm:w-[320px] sm:max-w-none sm:shadow-none md:w-[380px] lg:w-[500px]">
           <EnvironmentPanel
             environment={showGlobals 
               ? { _id: 'globals', type: 'environment', name: 'Globals', workspaceId: currentWorkspace?._id || '', variables: globalVariables, createdAt: '', updatedAt: '', isGlobal: true }
@@ -916,6 +1073,15 @@ export default function WorkspacePage() {
         isOpen={showHelp}
         onClose={() => setShowHelp(false)}
       />
+
+      {isInitialLoading && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-[#1e1e1e]/80">
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-8 h-8 border-2 border-[#3d3d3d] border-t-[#ff6b35] rounded-full animate-spin" />
+            <p className="text-sm text-gray-400">Loading workspace…</p>
+          </div>
+        </div>
+      )}
 
       <ToastContainer />
     </div>
