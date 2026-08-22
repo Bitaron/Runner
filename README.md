@@ -183,7 +183,9 @@ docker-compose logs -f   # View logs
 | `COUCHDB_URL` | CouchDB connection URL | http://localhost:5984 |
 | `COUCHDB_DATABASE` | Database name | apiforge |
 | `PORT` | API server port | 4000 |
-| `CORS_ORIGIN` | Allowed CORS origin | http://localhost:3000 |
+| `CORS_ORIGIN` | Comma-separated allowed origins (required in production) | localhost in dev |
+| `HTTPS_KEY_FILE` | TLS private key path; enables HTTPS when set with `HTTPS_CERT_FILE` | - |
+| `HTTPS_CERT_FILE` | TLS certificate path | - |
 
 ## License
 
