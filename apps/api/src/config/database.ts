@@ -26,6 +26,23 @@ export const initDatabase = async (): Promise<void> => {
   db = server.use<CouchDocument>(DB_NAME);
 
   await createDesignDocuments();
+  await createMangoIndexes();
+};
+
+const createMangoIndexes = async (): Promise<void> => {
+  const indexes = [
+    { name: 'idx_deleted_id', fields: ['deletedId'] as string[] },
+    { name: 'idx_type', fields: ['type'] as string[] },
+    { name: 'idx_reset_password_token', fields: ['resetPasswordToken'] as string[] },
+  ];
+
+  for (const index of indexes) {
+    try {
+      await db.createIndex({ index: { fields: index.fields }, name: index.name });
+    } catch (error: unknown) {
+      console.warn(`Failed to create Mango index '${index.name}':`, error);
+    }
+  }
 };
 
 const createDesignDocuments = async (): Promise<void> => {

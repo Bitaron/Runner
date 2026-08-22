@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { createDocument, getDocument, updateDocument, deleteDocument, findUserByEmail, getDb } from '../config/database';
 import { authMiddleware, AuthenticatedRequest } from '../middleware/auth';
+import { sendInvite } from '../services/emailService';
 import type { Team, User } from '@apiforge/shared';
 
 const router = Router();
@@ -205,7 +206,7 @@ router.post('/:id/members', authMiddleware, async (req: AuthenticatedRequest, re
     }
 
     if (team.members.some((m) => m.userId === user._id)) {
-      res.status(409).json({ success: false, error: 'User is already a member' });
+      res.status(409).json({ success: false, error: 'User is already a member of this team or has a pending invite' });
       return;
     }
 
@@ -223,6 +224,13 @@ router.post('/:id/members', authMiddleware, async (req: AuthenticatedRequest, re
     await updateDocument<User>(user._id, {
       teams: [...(user.teams || []), team._id],
     });
+
+    sendInvite({
+      to: user.email,
+      teamName: team.name,
+      inviterEmail: req.user!.email,
+      role: role as 'admin' | 'member',
+    }).catch((error) => console.error('Failed to send invite email:', error));
 
     res.json({ success: true, data: updated });
   } catch (error) {

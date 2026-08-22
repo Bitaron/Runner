@@ -5,6 +5,9 @@ import compression from 'compression';
 import morgan from 'morgan';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
+import fs from 'fs';
+import http from 'http';
+import https from 'https';
 import path from 'path';
 import dotenv from 'dotenv';
 import { initDatabase } from './config/database';
@@ -21,18 +24,32 @@ import executeRoutes from './routes/execute';
 import importExportRoutes from './routes/importExport';
 import uploadRoutes from './routes/upload';
 import searchRoutes from './routes/search';
+import { optionalAuth, AuthenticatedRequest } from './middleware/auth';
 
 dotenv.config({ path: path.join(__dirname, '../../.env') });
 
 const app = express();
 const PORT = process.env.PORT || 4000;
+const isProduction = process.env.NODE_ENV === 'production';
+
+const getCorsOrigins = (): string[] | false => {
+  const configured = process.env.CORS_ORIGIN;
+  if (configured) {
+    return configured.split(',').map((origin) => origin.trim()).filter(Boolean);
+  }
+  if (isProduction) {
+    console.warn('CORS_ORIGIN is not set in production; all cross-origin requests will be blocked.');
+    return false;
+  }
+  return ['http://localhost:3000', 'http://127.0.0.1:3000'];
+};
 
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
 }));
 
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+  origin: getCorsOrigins(),
   credentials: true,
 }));
 
@@ -43,9 +60,14 @@ app.use(cookieParser());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+app.use(optionalAuth);
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 1000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `${req.ip}:${(req as AuthenticatedRequest).user?.userId ?? 'anonymous'}`,
   message: { success: false, error: 'Too many requests, please try again later.' },
 });
 app.use('/api/', limiter);
@@ -84,9 +106,24 @@ const startServer = async () => {
     await initDatabase();
     console.log('Database initialized');
 
-    const server = app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
-    });
+    const keyFile = process.env.HTTPS_KEY_FILE;
+    const certFile = process.env.HTTPS_CERT_FILE;
+
+    let server: http.Server;
+    if (keyFile && certFile) {
+      server = https.createServer(
+        { key: fs.readFileSync(keyFile), cert: fs.readFileSync(certFile) },
+        app
+      );
+      server.listen(PORT, () => {
+        console.log(`Server running on https://localhost:${PORT}`);
+      });
+    } else {
+      server = http.createServer(app);
+      server.listen(PORT, () => {
+        console.log(`Server running on port ${PORT}`);
+      });
+    }
 
     initSyncWebSocket(server);
     console.log('Sync WebSocket server initialized');

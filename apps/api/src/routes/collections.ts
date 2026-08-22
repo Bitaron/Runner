@@ -57,7 +57,12 @@ router.post('/', authMiddleware, async (req: AuthenticatedRequest, res: Response
       return;
     }
 
-    const finalWorkspaceId = workspaceId || 'default';
+    if (!workspaceId) {
+      res.status(400).json({ success: false, error: 'workspaceId is required' });
+      return;
+    }
+
+    const finalWorkspaceId = workspaceId;
 
     const collection: Collection = {
       _id: `collection:${uuidv4()}`,
@@ -116,10 +121,27 @@ router.patch('/:id', authMiddleware, async (req: AuthenticatedRequest, res: Resp
 
     const { name, description, variables, auth, preRequestScript, testScript, folders, requests } = req.body;
     const updates: Partial<Collection> = {};
-    
+
+    const isValidVariables = (vars: unknown): boolean =>
+      Array.isArray(vars) &&
+      vars.every(
+        (v) =>
+          typeof v === 'object' &&
+          v !== null &&
+          typeof v.key === 'string' &&
+          v.key.trim().length > 0 &&
+          typeof v.value === 'string'
+      );
+
     if (name !== undefined) updates.name = name;
     if (description !== undefined) updates.description = description;
-    if (variables !== undefined) updates.variables = variables;
+    if (variables !== undefined) {
+      if (!isValidVariables(variables)) {
+        res.status(400).json({ success: false, error: 'Each variable must have a non-empty key and a string value' });
+        return;
+      }
+      updates.variables = variables;
+    }
     if (auth !== undefined) updates.auth = auth;
     if (preRequestScript !== undefined) updates.preRequestScript = preRequestScript;
     if (testScript !== undefined) updates.testScript = testScript;
@@ -202,7 +224,15 @@ router.post('/:id/restore', authMiddleware, async (req: AuthenticatedRequest, re
       return;
     }
 
-    const updated = await updateDocument<Collection>(req.params.id, { deletedAt: undefined });
+    const updated = await updateDocument<Collection>(req.params.id, {
+      deletedAt: null,
+    } as unknown as Partial<Collection>);
+
+    const db = getDb();
+    const trashResult = await db.find({ selector: { deletedId: req.params.id } });
+    for (const trashDoc of trashResult.docs) {
+      await db.destroy(trashDoc._id, trashDoc._rev);
+    }
 
     await broadcastSyncEvent(req.user.userId, collection.workspaceId, {
       type: 'create',
@@ -239,6 +269,28 @@ router.post('/:id/folders', authMiddleware, async (req: AuthenticatedRequest, re
       return;
     }
 
+    const findSiblings = (folders: Folder[]): Folder[] | null => {
+      if (!parentFolderId) return folders;
+      for (const f of folders) {
+        if (f._id === parentFolderId) return f.folders;
+        const nested = findSiblings(f.folders);
+        if (nested) return nested;
+      }
+      return null;
+    };
+
+    const siblings = findSiblings(collection.folders);
+
+    if (!siblings) {
+      res.status(404).json({ success: false, error: 'Parent folder not found' });
+      return;
+    }
+
+    if (siblings.some((f) => f.name === name)) {
+      res.status(409).json({ success: false, error: 'A folder with this name already exists at this level' });
+      return;
+    }
+
     const newFolder: Folder = {
       _id: `folder:${uuidv4()}`,
       name,
@@ -272,7 +324,7 @@ router.post('/:id/folders', authMiddleware, async (req: AuthenticatedRequest, re
       workspaceId: collection.workspaceId,
     });
 
-    res.status(201).json({ success: true, data: newFolder });
+    res.status(201).json({ success: true, data: { folder: newFolder, collection: updated } });
   } catch (error) {
     res.status(500).json({ success: false, error: 'Failed to create folder' });
   }

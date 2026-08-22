@@ -15,6 +15,71 @@ import type {
 
 const router = Router();
 
+type JsonRecord = Record<string, unknown>;
+
+const validatePostmanRequest = (request: unknown, path: string, errors: string[]): void => {
+  if (!request || typeof request !== 'object' || Array.isArray(request)) {
+    errors.push(`${path}.request must be an object`);
+    return;
+  }
+  const req = request as JsonRecord;
+  if (typeof req.method !== 'string' || req.method.trim() === '') {
+    errors.push(`${path}.request.method must be a non-empty string`);
+  }
+  const urlIsRaw = typeof req.url === 'string';
+  const urlIsObject =
+    !!req.url &&
+    typeof req.url === 'object' &&
+    !Array.isArray(req.url) &&
+    typeof (req.url as JsonRecord).raw === 'string';
+  if (!urlIsRaw && !urlIsObject) {
+    errors.push(`${path}.request.url must be a string or an object with a "raw" string`);
+  }
+};
+
+const validatePostmanItems = (items: unknown[], path: string, errors: string[]): void => {
+  items.forEach((entry, index) => {
+    const itemPath = `${path}[${index}]`;
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      errors.push(`${itemPath} must be an object`);
+      return;
+    }
+    const item = entry as JsonRecord;
+    if (item.request !== undefined) {
+      validatePostmanRequest(item.request, itemPath, errors);
+    }
+    if (item.item !== undefined) {
+      if (!Array.isArray(item.item)) {
+        errors.push(`${itemPath}.item must be an array`);
+      } else {
+        validatePostmanItems(item.item, `${itemPath}.item`, errors);
+      }
+    }
+  });
+};
+
+const validatePostmanCollection = (input: unknown): string[] => {
+  const errors: string[] = [];
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return ['collection must be an object'];
+  }
+  const col = input as JsonRecord;
+  if (!col.info || typeof col.info !== 'object' || Array.isArray(col.info)) {
+    errors.push('missing required top-level "info" object');
+  } else {
+    const info = col.info as JsonRecord;
+    if (typeof info.name !== 'string' || info.name.trim() === '') {
+      errors.push('"info.name" must be a non-empty string');
+    }
+  }
+  if (!Array.isArray(col.item)) {
+    errors.push('missing required top-level "item" array');
+  } else {
+    validatePostmanItems(col.item, 'item', errors);
+  }
+  return errors;
+};
+
 router.post('/postman', authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     if (!req.user) {
@@ -22,17 +87,30 @@ router.post('/postman', authMiddleware, async (req: AuthenticatedRequest, res: R
       return;
     }
 
-    const { collection: postmanCollection, workspaceId } = req.body as { collection: PostmanCollection; workspaceId?: string };
+    const { collection: rawCollection, workspaceId } = req.body as { collection?: unknown; workspaceId?: string };
 
-    if (!postmanCollection || !postmanCollection.info || !postmanCollection.info.name) {
-      res.status(400).json({ success: false, error: 'Invalid Postman collection' });
+    if (!rawCollection || typeof rawCollection !== 'object' || Array.isArray(rawCollection)) {
+      res.status(400).json({ success: false, error: 'Invalid Postman collection: request body must contain a "collection" object' });
+      return;
+    }
+
+    const validationErrors = validatePostmanCollection(rawCollection);
+    if (validationErrors.length > 0) {
+      res.status(400).json({ success: false, error: `Invalid Postman collection: ${validationErrors.join(', ')}` });
+      return;
+    }
+
+    const postmanCollection = rawCollection as PostmanCollection;
+
+    if (!workspaceId || typeof workspaceId !== 'string') {
+      res.status(400).json({ success: false, error: 'workspaceId is required' });
       return;
     }
 
     const collection: Collection = {
       _id: `collection:${uuidv4()}`,
       type: 'collection',
-      workspaceId: workspaceId || 'default',
+      workspaceId,
       name: postmanCollection.info.name,
       description: postmanCollection.info.description,
       variables: postmanCollection.variable || [],
@@ -184,19 +262,21 @@ router.get('/postman/:id', authMiddleware, async (req: AuthenticatedRequest, res
     }
 
     const convertRequest = (request: ApiRequest): PostmanItem => {
-      const url = request.url;
-      const queryParams: KeyValue[] = request.params.filter((p) => !p.disabled);
+      const url = typeof request.url === 'string' ? request.url : '';
+      const params = Array.isArray(request.params) ? request.params : [];
+      const headers = Array.isArray(request.headers) ? request.headers : [];
+      const queryParams = params.filter((p) => !p.disabled);
 
       let body: PostmanItem['request'] extends { body?: infer B } ? B : never = undefined;
 
-      if (request.body.mode !== 'none') {
+      if (request.body?.mode && request.body.mode !== 'none') {
         switch (request.body.mode) {
           case 'raw':
             body = { mode: 'raw', raw: request.body.raw };
             break;
           case 'formdata':
-            body = { 
-              mode: 'formdata', 
+            body = {
+              mode: 'formdata',
               formdata: request.body.formdata?.map((f) => ({
                 key: f.key,
                 value: f.value,
@@ -228,10 +308,10 @@ router.get('/postman/:id', authMiddleware, async (req: AuthenticatedRequest, res
       }
 
       return {
-        name: request.name,
+        name: request.name || 'Untitled request',
         request: {
-          method: request.method,
-          header: request.headers.filter((h) => !h.disabled).map((h) => ({
+          method: request.method || 'GET',
+          header: headers.filter((h) => !h.disabled).map((h) => ({
             key: h.key,
             value: h.value,
             description: h.description,
@@ -247,26 +327,26 @@ router.get('/postman/:id', authMiddleware, async (req: AuthenticatedRequest, res
 
     const convertFolder = (folder: Folder): PostmanItem => {
       return {
-        name: folder.name,
+        name: folder.name || 'Untitled folder',
         item: [
-          ...folder.requests.map(convertRequest),
-          ...folder.folders.map(convertFolder),
+          ...(Array.isArray(folder.requests) ? folder.requests.map(convertRequest) : []),
+          ...(Array.isArray(folder.folders) ? folder.folders.map(convertFolder) : []),
         ],
       };
     };
 
     const postmanCollection: PostmanCollection = {
       info: {
-        name: collection.name,
+        name: collection.name || 'Untitled Collection',
         description: collection.description,
         schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json',
         _postman_id: collection._id,
       },
       item: [
-        ...collection.requests.map(convertRequest),
-        ...collection.folders.map(convertFolder),
+        ...(Array.isArray(collection.requests) ? collection.requests.map(convertRequest) : []),
+        ...(Array.isArray(collection.folders) ? collection.folders.map(convertFolder) : []),
       ],
-      variable: collection.variables,
+      variable: Array.isArray(collection.variables) ? collection.variables : [],
       auth: collection.auth,
       event: [
         ...(collection.preRequestScript ? [{

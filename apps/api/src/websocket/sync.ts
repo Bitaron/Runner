@@ -1,6 +1,7 @@
 import { Server as HttpServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { verifyAccessToken, TokenPayload } from '../utils/jwt';
+import { isTokenBlacklisted } from '../utils/tokenBlacklist';
 import { getDb, getDocument } from '../config/database';
 import type { Workspace, Team } from '@apiforge/shared';
 
@@ -32,6 +33,30 @@ interface BroadcastMessage {
 
 let wss: WebSocketServer;
 const connectedClients: Map<string, ExtendedWebSocket> = new Map();
+const workspaceRooms: Map<string, Set<ExtendedWebSocket>> = new Map();
+
+const isValidWorkspaceId = (value: unknown): value is string =>
+  typeof value === 'string' && value.trim().length > 0 && value.length <= 128;
+
+const joinWorkspaceRoom = (ws: ExtendedWebSocket, workspaceId: string): void => {
+  ws.subscribedWorkspaces.add(workspaceId);
+  let room = workspaceRooms.get(workspaceId);
+  if (!room) {
+    room = new Set();
+    workspaceRooms.set(workspaceId, room);
+  }
+  room.add(ws);
+};
+
+const leaveWorkspaceRoom = (ws: ExtendedWebSocket, workspaceId: string): void => {
+  ws.subscribedWorkspaces.delete(workspaceId);
+  const room = workspaceRooms.get(workspaceId);
+  if (!room) return;
+  room.delete(ws);
+  if (room.size === 0) {
+    workspaceRooms.delete(workspaceId);
+  }
+};
 
 export const initSyncWebSocket = (server: HttpServer): void => {
   wss = new WebSocketServer({ server, path: '/ws' });
@@ -54,6 +79,7 @@ export const initSyncWebSocket = (server: HttpServer): void => {
     });
 
     ws.on('close', () => {
+      ws.subscribedWorkspaces.forEach((workspaceId) => leaveWorkspaceRoom(ws, workspaceId));
       if (ws.userId) {
         connectedClients.delete(ws.userId);
         broadcastUserStatus(ws, 'left');
@@ -100,6 +126,10 @@ const handleMessage = async (ws: ExtendedWebSocket, message: IncomingMessage): P
       }
       try {
         const payload = verifyAccessToken(message.token);
+        if (await isTokenBlacklisted(payload.jti)) {
+          ws.send(JSON.stringify({ type: 'error', error: 'Invalid token' }));
+          return;
+        }
         ws.userId = payload.userId;
         ws.userPayload = payload;
         connectedClients.set(payload.userId, ws);
@@ -115,11 +145,19 @@ const handleMessage = async (ws: ExtendedWebSocket, message: IncomingMessage): P
       break;
 
     case 'subscribe':
-      if (!message.workspaceId) {
-        ws.send(JSON.stringify({ type: 'error', error: 'Workspace ID required' }));
+      if (!isValidWorkspaceId(message.workspaceId)) {
+        ws.send(JSON.stringify({ type: 'error', error: 'Valid workspace ID required' }));
         return;
       }
-      ws.subscribedWorkspaces.add(message.workspaceId);
+      if (!ws.userId) {
+        ws.send(JSON.stringify({ type: 'error', error: 'Not authenticated' }));
+        return;
+      }
+      if (!(await checkWorkspaceAccess(ws.userId, message.workspaceId))) {
+        ws.send(JSON.stringify({ type: 'error', error: 'Not authorized for workspace' }));
+        return;
+      }
+      joinWorkspaceRoom(ws, message.workspaceId);
       broadcastUserStatus(ws, 'joined', message.workspaceId);
       ws.send(JSON.stringify({ 
         type: 'subscribed', 
@@ -128,11 +166,11 @@ const handleMessage = async (ws: ExtendedWebSocket, message: IncomingMessage): P
       break;
 
     case 'unsubscribe':
-      if (!message.workspaceId) {
-        ws.send(JSON.stringify({ type: 'error', error: 'Workspace ID required' }));
+      if (!isValidWorkspaceId(message.workspaceId)) {
+        ws.send(JSON.stringify({ type: 'error', error: 'Valid workspace ID required' }));
         return;
       }
-      ws.subscribedWorkspaces.delete(message.workspaceId);
+      leaveWorkspaceRoom(ws, message.workspaceId);
       broadcastUserStatus(ws, 'left', message.workspaceId);
       ws.send(JSON.stringify({ 
         type: 'unsubscribed', 
@@ -141,7 +179,7 @@ const handleMessage = async (ws: ExtendedWebSocket, message: IncomingMessage): P
       break;
 
     case 'broadcast':
-      if (!message.event || !message.workspaceId) {
+      if (!message.event || !isValidWorkspaceId(message.workspaceId)) {
         ws.send(JSON.stringify({ type: 'error', error: 'Event and workspace ID required' }));
         return;
       }
@@ -178,8 +216,8 @@ const broadcastUserStatus = (ws: ExtendedWebSocket, status: 'joined' | 'left', w
 
   const messageStr = JSON.stringify(message);
   
-  connectedClients.forEach((client) => {
-    if (client !== ws && client.readyState === WebSocket.OPEN && client.subscribedWorkspaces.has(workspaceId)) {
+  workspaceRooms.get(workspaceId)?.forEach((client) => {
+    if (client !== ws && client.readyState === WebSocket.OPEN) {
       client.send(messageStr);
     }
   });
@@ -203,12 +241,8 @@ export const broadcastSyncEvent = async (
 
   const messageStr = JSON.stringify(message);
 
-  connectedClients.forEach((client) => {
-    if (
-      client.userId !== senderId &&
-      client.readyState === WebSocket.OPEN &&
-      client.subscribedWorkspaces.has(workspaceId)
-    ) {
+  workspaceRooms.get(workspaceId)?.forEach((client) => {
+    if (client.userId !== senderId && client.readyState === WebSocket.OPEN) {
       client.send(messageStr);
     }
   });
@@ -246,8 +280,8 @@ export const sendToUser = (userId: string, message: unknown): void => {
 export const sendToWorkspace = (workspaceId: string, message: unknown): void => {
   const messageStr = JSON.stringify(message);
   
-  connectedClients.forEach((client) => {
-    if (client.readyState === WebSocket.OPEN && client.subscribedWorkspaces.has(workspaceId)) {
+  workspaceRooms.get(workspaceId)?.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
       client.send(messageStr);
     }
   });

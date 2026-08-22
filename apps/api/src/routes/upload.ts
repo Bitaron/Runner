@@ -6,13 +6,35 @@ import { authMiddleware, AuthenticatedRequest } from '../middleware/auth';
 
 const router = Router();
 
+const ALLOWED_FILE_EXTENSIONS = ['.json', '.yaml', '.yml', '.xml', '.txt', '.md', '.csv', '.har', '.zip'];
+
+const ALLOWED_MIME_TYPES = new Set([
+  'application/json',
+  'application/yaml',
+  'application/x-yaml',
+  'text/yaml',
+  'text/x-yaml',
+  'application/xml',
+  'text/xml',
+  'text/plain',
+  'text/markdown',
+  'text/csv',
+  'application/csv',
+  'application/octet-stream',
+  'application/zip',
+  'application/x-zip-compressed',
+]);
+
+const sanitizeFilename = (filename: string): string =>
+  path.basename(filename.replace(/\\/g, '/')).replace(/[\u0000-\u001f]/g, '');
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, path.join(__dirname, '../../uploads'));
   },
   filename: (req, file, cb) => {
     const uniqueId = uuidv4();
-    const ext = path.extname(file.originalname);
+    const ext = path.extname(sanitizeFilename(file.originalname)).toLowerCase();
     cb(null, `${uniqueId}${ext}`);
   },
 });
@@ -23,12 +45,33 @@ const upload = multer({
     fileSize: 10 * 1024 * 1024, // 10MB limit
   },
   fileFilter: (req, file, cb) => {
-    // Accept all files for now
+    const ext = path.extname(sanitizeFilename(file.originalname)).toLowerCase();
+    if (!ALLOWED_FILE_EXTENSIONS.includes(ext)) {
+      cb(new Error(`Unsupported file type "${ext || 'none'}". Allowed types: ${ALLOWED_FILE_EXTENSIONS.join(', ')}`));
+      return;
+    }
+    if (!ALLOWED_MIME_TYPES.has(file.mimetype)) {
+      cb(new Error(`Unsupported content type "${file.mimetype}".`));
+      return;
+    }
     cb(null, true);
   },
 });
 
-router.post('/', authMiddleware, upload.single('file'), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+router.post('/', authMiddleware, (req, res, next) => {
+  upload.single('file')(req, res, (err) => {
+    if (err instanceof multer.MulterError) {
+      const status = err.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
+      res.status(status).json({ success: false, error: err.message });
+      return;
+    }
+    if (err) {
+      res.status(415).json({ success: false, error: err.message });
+      return;
+    }
+    next();
+  });
+}, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     if (!req.file) {
       res.status(400).json({ success: false, error: 'No file provided' });

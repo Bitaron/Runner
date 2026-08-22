@@ -15,7 +15,13 @@ router.post('/', authMiddleware, async (req: AuthenticatedRequest, res: Response
     }
 
     const { name, method, url, collectionId, folderId, workspaceId, params, headers, body, auth, preRequestScript, testScript } = req.body;
-    const finalWorkspaceId = workspaceId || 'default';
+
+    if (!workspaceId) {
+      res.status(400).json({ success: false, error: 'workspaceId is required' });
+      return;
+    }
+
+    const finalWorkspaceId = workspaceId;
 
     const request: ApiRequest = {
       _id: `request:${uuidv4()}`,
