@@ -40,22 +40,22 @@ export default function LoginPage() {
     }
   };
 
-  const handleAnonymousLogin = async () => {
+  const handleGuestLogin = async () => {
     setError('');
     setIsLoading(true);
 
     try {
-      const response = await apiClient.post('/api/auth/anonymous');
+      const response = await apiClient.post('/api/auth/guest');
 
       if (response.success && response.data) {
-        const data = response.data as { user: User; anonymousToken: string };
+        const data = response.data as { user: User; accessToken: string; refreshToken?: string };
         setAuth(data.user, data);
         router.push('/workspace');
       } else {
-        setError(response.error || 'Anonymous login failed');
+        setError(response.error || 'Guest login failed');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      setError(err instanceof Error ? err.message : 'Could not start a guest session. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -81,20 +81,29 @@ export default function LoginPage() {
         <Input
           label="Email"
           type="email"
+          autoComplete="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="you@example.com"
           required
         />
 
-        <Input
-          label="Password"
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="Enter your password"
-          required
-        />
+        <div>
+          <Input
+            label="Password"
+            type="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Enter your password"
+            required
+          />
+          <div className="mt-2 flex justify-end">
+            <Link href="/forgot-password" className="text-sm text-[#ff6b35] hover:underline">
+              Forgot password?
+            </Link>
+          </div>
+        </div>
 
         <Button type="submit" className="w-full" loading={isLoading}>
           Sign In
@@ -114,7 +123,7 @@ export default function LoginPage() {
         type="button"
         variant="secondary"
         className="w-full"
-        onClick={handleAnonymousLogin}
+        onClick={handleGuestLogin}
         loading={isLoading}
       >
         Continue as Guest

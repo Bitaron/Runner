@@ -10,6 +10,7 @@ interface AuthState {
   hasHydrated: boolean;
   setAuth: (user: User, tokens: AuthTokens) => void;
   setAnonymous: (user: User) => void;
+  setTokens: (tokens: AuthTokens | null) => void;
   updateUser: (user: Partial<User>) => void;
   logout: () => void;
   clearAuth: () => void;
@@ -40,7 +41,9 @@ export const useAuthStore = create<AuthState>()(
       }),
 
       setHasHydrated: (state) => set({ hasHydrated: state }),
-      
+
+      setTokens: (tokens) => set({ tokens }),
+
       updateUser: (updates) => set((state) => ({
         user: state.user ? { ...state.user, ...updates } : null
       })),
@@ -61,7 +64,14 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: 'apiforge-auth',
+      partialize: (state) => ({
+        user: state.user,
+        isAuthenticated: state.isAuthenticated,
+        isAnonymous: state.isAnonymous,
+      }),
       onRehydrateStorage: () => (state) => {
+        // Tokens are never persisted; the API client silently refreshes
+        // via the httpOnly refresh-token cookie on the first 401.
         state?.setHasHydrated(true);
       },
     }

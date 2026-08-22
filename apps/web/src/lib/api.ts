@@ -1,17 +1,27 @@
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios';
-import Cookies from 'js-cookie';
 import { useAuthStore } from '@/stores/authStore';
-import type { ApiResponse, PaginatedResponse } from '@apiforge/shared';
+import type { ApiResponse } from '@apiforge/shared';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
+/**
+ * Access tokens live only in memory (Zustand, not persisted).
+ * Refresh tokens are httpOnly cookies set by the API; refreshing uses
+ * `withCredentials` so the browser attaches them automatically.
+ */
+export const clearLocalAuth = (): void => {
+  useAuthStore.getState().clearAuth();
+};
+
 class ApiClient {
   private client: AxiosInstance;
+  private refreshPromise: Promise<string | null> | null = null;
 
   constructor() {
     this.client = axios.create({
       baseURL: API_BASE_URL,
       timeout: 30000,
+      withCredentials: true,
       headers: {
         'Content-Type': 'application/json',
       },
@@ -20,12 +30,42 @@ class ApiClient {
     this.setupInterceptors();
   }
 
+  private getAccessToken(): string | null {
+    return useAuthStore.getState().tokens?.accessToken ?? null;
+  }
+
+  private async refreshAccessToken(): Promise<string | null> {
+    // Single-flight: concurrent 401s share one refresh request
+    if (!this.refreshPromise) {
+      this.refreshPromise = axios
+        .post(
+          `${API_BASE_URL}/api/auth/refresh`,
+          {},
+          { withCredentials: true }
+        )
+        .then((response) => {
+          const { accessToken } = response.data?.data ?? {};
+          if (accessToken) {
+            useAuthStore.getState().setTokens({
+              ...useAuthStore.getState().tokens,
+              accessToken,
+            });
+            return accessToken as string;
+          }
+          return null;
+        })
+        .catch(() => null)
+        .finally(() => {
+          this.refreshPromise = null;
+        });
+    }
+    return this.refreshPromise;
+  }
+
   private setupInterceptors() {
     this.client.interceptors.request.use(
       (config: InternalAxiosRequestConfig) => {
-        const token = Cookies.get('accessToken');
-        const anonymousToken = Cookies.get('anonymousToken');
-        const authToken = token || anonymousToken;
+        const authToken = this.getAccessToken();
 
         if (authToken && config.headers) {
           config.headers.Authorization = `Bearer ${authToken}`;
@@ -41,33 +81,25 @@ class ApiClient {
       async (error: AxiosError<ApiResponse>) => {
         const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
-        if (error.response?.status === 401 && !originalRequest._retry) {
+        if (
+          error.response?.status === 401 &&
+          originalRequest &&
+          !originalRequest._retry &&
+          !originalRequest.url?.includes('/api/auth/')
+        ) {
           originalRequest._retry = true;
 
-          try {
-            const refreshToken = Cookies.get('refreshToken');
-            if (refreshToken) {
-              const response = await axios.post(`${API_BASE_URL}/api/auth/refresh`, {
-                refreshToken,
-              });
+          const accessToken = await this.refreshAccessToken();
 
-              const { accessToken, refreshToken: newRefreshToken } = response.data.data;
-              Cookies.set('accessToken', accessToken, { expires: 1 });
-              Cookies.set('refreshToken', newRefreshToken, { expires: 30 });
-
-              if (originalRequest.headers) {
-                originalRequest.headers.Authorization = `Bearer ${accessToken}`;
-              }
-
-              return this.client(originalRequest);
+          if (accessToken) {
+            if (originalRequest.headers) {
+              originalRequest.headers.Authorization = `Bearer ${accessToken}`;
             }
-          } catch (refreshError) {
-            useAuthStore.getState().clearAuth();
-            Cookies.remove('accessToken');
-            Cookies.remove('refreshToken');
-            Cookies.remove('anonymousToken');
-            window.location.href = '/login';
+            return this.client(originalRequest);
           }
+
+          clearLocalAuth();
+          window.location.href = '/login';
         }
 
         return Promise.reject(error);

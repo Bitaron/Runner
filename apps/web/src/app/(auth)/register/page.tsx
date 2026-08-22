@@ -18,19 +18,21 @@ export default function RegisterPage() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setFieldErrors({});
 
     if (password !== confirmPassword) {
-      setError('Passwords do not match');
+      setFieldErrors((prev) => ({ ...prev, confirmPassword: 'Passwords do not match' }));
       return;
     }
 
     if (password.length < 8) {
-      setError('Password must be at least 8 characters');
+      setFieldErrors((prev) => ({ ...prev, password: 'Password must be at least 8 characters' }));
       return;
     }
 
@@ -48,7 +50,14 @@ export default function RegisterPage() {
         setAuth(data.user, data);
         router.push('/workspace');
       } else {
-        setError(response.error || 'Registration failed');
+        const apiError = response.error || 'Registration failed';
+        if (apiError === 'Email already registered') {
+          setFieldErrors((prev) => ({ ...prev, email: apiError }));
+        } else if (apiError === 'Password must be at least 8 characters') {
+          setFieldErrors((prev) => ({ ...prev, password: apiError }));
+        } else {
+          setError(apiError);
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
@@ -77,36 +86,44 @@ export default function RegisterPage() {
         <Input
           label="Full Name"
           type="text"
+          autoComplete="name"
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="John Doe"
+          error={fieldErrors.name}
           required
         />
 
         <Input
           label="Email"
           type="email"
+          autoComplete="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="you@example.com"
+          error={fieldErrors.email}
           required
         />
 
         <Input
           label="Password"
           type="password"
+          autoComplete="new-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="At least 8 characters"
+          error={fieldErrors.password}
           required
         />
 
         <Input
           label="Confirm Password"
           type="password"
+          autoComplete="new-password"
           value={confirmPassword}
           onChange={(e) => setConfirmPassword(e.target.value)}
           placeholder="Confirm your password"
+          error={fieldErrors.confirmPassword}
           required
         />
 
