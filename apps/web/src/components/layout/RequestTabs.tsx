@@ -4,6 +4,7 @@ import React from 'react';
 import { X, Plus, FolderOpen, FileJson } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ApiRequest, Collection, Folder } from '@apiforge/shared';
+import { getMethodBadgeStyle } from '@/lib/methodColors';
 
 interface RequestTabItem {
   id: string;
@@ -32,7 +33,7 @@ interface RequestTabsProps {
   onTabSelect: (tabId: string) => void;
   onTabClose: (tabId: string) => void;
   onNewTab: () => void;
-  getMethodColor: (method: string) => string;
+  getMethodStyle?: (method: string) => React.CSSProperties;
 }
 
 export const RequestTabs: React.FC<RequestTabsProps> = ({
@@ -41,12 +42,11 @@ export const RequestTabs: React.FC<RequestTabsProps> = ({
   onTabSelect,
   onTabClose,
   onNewTab,
-  getMethodColor,
 }) => {
   const getTabIcon = (tab: TabItem) => {
     if (tab.type === 'request') {
       return (
-        <span className={cn("text-xs font-medium px-1.5 py-0.5 rounded", getMethodColor(tab.request.method))}>
+        <span className="text-xs font-medium px-1.5 py-0.5 rounded" style={getMethodBadgeStyle(tab.request.method)}>
           {tab.request.method}
         </span>
       );

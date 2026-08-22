@@ -4,6 +4,7 @@ import React from 'react';
 import { ChevronRight, FileJson, FolderOpen, Plus, MoreVertical } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Collection, Folder, ApiRequest } from '@apiforge/shared';
+import { getMethodBadgeStyle } from '@/lib/methodColors';
 import { Button } from '../ui/Button';
 
 interface CollectionFolderViewerProps {
@@ -21,19 +22,6 @@ export const CollectionFolderViewer: React.FC<CollectionFolderViewerProps> = ({
   onSelectRequest,
   onCreateRequest,
 }) => {
-  const getMethodColor = (method: string) => {
-    const colors: Record<string, string> = {
-      GET: 'bg-green-600 text-white',
-      POST: 'bg-[#ff6b35] text-white',
-      PUT: 'bg-blue-600 text-white',
-      PATCH: 'bg-yellow-600 text-white',
-      DELETE: 'bg-red-600 text-white',
-      HEAD: 'bg-gray-600 text-white',
-      OPTIONS: 'bg-purple-600 text-white',
-    };
-    return colors[method] || 'bg-gray-600 text-white';
-  };
-
   const requests = type === 'collection' ? collection.requests : folder?.requests || [];
   const subfolders = type === 'collection' ? collection.folders : folder?.folders || [];
   const currentName = type === 'collection' ? collection.name : folder?.name || '';
@@ -95,7 +83,7 @@ export const CollectionFolderViewer: React.FC<CollectionFolderViewerProps> = ({
                     onClick={() => onSelectRequest(request)}
                     className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-[#2d2d2d] cursor-pointer transition-colors"
                   >
-                    <span className={cn("text-xs font-medium px-1.5 py-0.5 rounded", getMethodColor(request.method))}>
+                    <span className="text-xs font-medium px-1.5 py-0.5 rounded" style={getMethodBadgeStyle(request.method)}>
                       {request.method}
                     </span>
                     <span className="text-sm text-gray-300 truncate flex-1">{request.name}</span>
