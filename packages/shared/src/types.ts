@@ -206,6 +206,7 @@ export interface Environment {
   createdAt: string;
   updatedAt: string;
   isGlobal: boolean;
+  deletedAt?: string | null;
 }
 
 export interface Workspace {
@@ -249,11 +250,24 @@ export interface User {
   type: 'user';
   email: string;
   passwordHash?: string;
+  resetPasswordToken?: string | null;
+  resetPasswordExpires?: string | null;
+  isAnonymous?: boolean;
   name: string;
   createdAt: string;
   updatedAt: string;
   settings: UserSettings;
   teams: string[];
+}
+
+export interface RevokedToken {
+  _id: string;
+  _rev?: string;
+  type: 'revoked_token';
+  jti: string;
+  expiresAt: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface HistoryEntry {
@@ -269,11 +283,11 @@ export interface HistoryEntry {
 
 export interface TrashItem {
   _id: string;
-  type: 'collection' | 'request' | 'folder';
+  type: 'collection' | 'request' | 'folder' | 'environment';
   deletedId: string;
   deletedAt: string;
   expiresAt: string;
-  data: Collection | ApiRequest | Folder;
+  data: Collection | ApiRequest | Folder | Environment;
 }
 
 export interface WebSocketMessage {
@@ -297,4 +311,4 @@ export interface WebSocketRequest {
   createdBy: string;
 }
 
-export type CouchDocument = User | Team | Workspace | Collection | ApiRequest | Environment | HistoryEntry | TrashItem | WebSocketRequest;
+export type CouchDocument = User | Team | Workspace | Collection | ApiRequest | Environment | HistoryEntry | TrashItem | WebSocketRequest | RevokedToken;
