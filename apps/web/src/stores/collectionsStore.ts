@@ -3,6 +3,149 @@ import { persist } from 'zustand/middleware';
 import type { Collection, ApiRequest, Folder, KeyValue, RequestBody, AuthConfig } from '@apiforge/shared';
 import { v4 as uuidv4 } from 'uuid';
 import { syncManager } from '@/lib/syncManager';
+import { apiClient } from '@/lib/api';
+
+const findFolderById = (folders: Folder[], id: string): Folder | null => {
+  for (const f of folders) {
+    if (f._id === id) return f;
+    const found = findFolderById(f.folders, id);
+    if (found) return found;
+  }
+  return null;
+};
+
+const findRequestById = (collection: Collection, id: string): ApiRequest | null => {
+  const req = collection.requests.find((r) => r._id === id);
+  if (req) return req;
+  const searchFolders = (folders: Folder[]): ApiRequest | null => {
+    for (const f of folders) {
+      const found = f.requests.find((r) => r._id === id);
+      if (found) return found;
+      const nested = searchFolders(f.folders);
+      if (nested) return nested;
+    }
+    return null;
+  };
+  return searchFolders(collection.folders);
+};
+
+const removeFromFolderTree = (folders: Folder[], itemId: string, itemType: 'request' | 'folder'): Folder[] => {
+  return folders
+    .filter((f) => (itemType === 'folder' ? f._id !== itemId : true))
+    .map((f) => ({
+      ...f,
+      requests: itemType === 'request' ? f.requests.filter((r) => r._id !== itemId) : f.requests,
+      folders: removeFromFolderTree(f.folders, itemId, itemType),
+    }));
+};
+
+const addRequestToFolderTree = (folders: Folder[], targetId: string, request: ApiRequest): Folder[] => {
+  return folders.map((f) => {
+    if (f._id === targetId) {
+      return { ...f, requests: [...f.requests, request] };
+    }
+    return { ...f, folders: addRequestToFolderTree(f.folders, targetId, request) };
+  });
+};
+
+const addFolderToFolderTree = (folders: Folder[], targetId: string, folder: Folder): Folder[] => {
+  return folders.map((f) => {
+    if (f._id === targetId) {
+      return { ...f, folders: [...f.folders, folder] };
+    }
+    return { ...f, folders: addFolderToFolderTree(f.folders, targetId, folder) };
+  });
+};
+
+const moveItemInCollections = (
+  collections: Collection[],
+  itemId: string,
+  itemType: 'request' | 'folder',
+  fromCollectionId: string,
+  toCollectionId: string,
+  toFolderId?: string
+): Collection[] | null => {
+  const fromCollection = collections.find((c) => c._id === fromCollectionId);
+  if (!fromCollection) return null;
+
+  if (itemType === 'request') {
+    const request = findRequestById(fromCollection, itemId);
+    if (!request) return null;
+
+    const source: Collection = {
+      ...fromCollection,
+      requests: fromCollection.requests.filter((r) => r._id !== itemId),
+      folders: removeFromFolderTree(fromCollection.folders, itemId, 'request'),
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (fromCollectionId === toCollectionId) {
+      const updated = toFolderId
+        ? { ...source, folders: addRequestToFolderTree(source.folders, toFolderId, { ...request, folderId: toFolderId }) }
+        : { ...source, requests: [...source.requests, { ...request, folderId: undefined }] };
+      return collections.map((c) => (c._id === fromCollectionId ? updated : c));
+    }
+
+    const toCollection = collections.find((c) => c._id === toCollectionId);
+    if (!toCollection) return null;
+
+    const target: Collection = toFolderId
+      ? {
+          ...toCollection,
+          folders: addRequestToFolderTree(toCollection.folders, toFolderId, { ...request, folderId: toFolderId, collectionId: toCollectionId }),
+          updatedAt: new Date().toISOString(),
+        }
+      : {
+          ...toCollection,
+          requests: [...toCollection.requests, { ...request, collectionId: toCollectionId, folderId: undefined }],
+          updatedAt: new Date().toISOString(),
+        };
+
+    return collections.map((c) => {
+      if (c._id === fromCollectionId) return source;
+      if (c._id === toCollectionId) return target;
+      return c;
+    });
+  }
+
+  const folder = findFolderById(fromCollection.folders, itemId);
+  if (!folder) return null;
+  if (toFolderId && (toFolderId === itemId || findFolderById(folder.folders, toFolderId))) return null;
+
+  const source: Collection = {
+    ...fromCollection,
+    folders: removeFromFolderTree(fromCollection.folders, itemId, 'folder'),
+    updatedAt: new Date().toISOString(),
+  };
+
+  if (fromCollectionId === toCollectionId) {
+    const updated = toFolderId
+      ? { ...source, folders: addFolderToFolderTree(source.folders, toFolderId, folder) }
+      : { ...source, folders: [...source.folders, folder] };
+    return collections.map((c) => (c._id === fromCollectionId ? updated : c));
+  }
+
+  const toCollection = collections.find((c) => c._id === toCollectionId);
+  if (!toCollection) return null;
+
+  const target: Collection = toFolderId
+    ? {
+        ...toCollection,
+        folders: addFolderToFolderTree(toCollection.folders, toFolderId, folder),
+        updatedAt: new Date().toISOString(),
+      }
+    : {
+        ...toCollection,
+        folders: [...toCollection.folders, folder],
+        updatedAt: new Date().toISOString(),
+      };
+
+  return collections.map((c) => {
+    if (c._id === fromCollectionId) return source;
+    if (c._id === toCollectionId) return target;
+    return c;
+  });
+};
 
 interface CollectionsState {
   collections: Collection[];
@@ -351,94 +494,18 @@ export const useCollectionsStore = create<CollectionsState>()(
       }),
       
       moveItem: (itemId, itemType, fromCollectionId, toCollectionId, toFolderId) => set((state) => {
-        let movedItem: ApiRequest | Folder | null = null;
-        
-        const collections = state.collections.map((c) => {
-          if (c._id !== fromCollectionId) return c;
-          
-          if (itemType === 'request') {
-            const request = c.requests.find((r) => r._id === itemId) ||
-              c.folders.reduce((found: ApiRequest | null, f) => {
-                if (found) return found;
-                const findRequest = (folder: Folder): ApiRequest | null => {
-                  const req = folder.requests.find((r) => r._id === itemId);
-                  if (req) return req;
-                  return folder.folders.reduce<ApiRequest | null>((acc, subFolder) => 
-                    acc || findRequest(subFolder), null);
-                };
-                return findRequest(f);
-              }, null);
-            
-            if (!request) return c;
-            movedItem = request;
-            
-            const newC = {
-              ...c,
-              requests: c.requests.filter((r) => r._id !== itemId),
-              folders: c.folders.map((f) => ({
-                ...f,
-                requests: f.requests.filter((r) => r._id !== itemId),
-                folders: f.folders.map((sf) => ({
-                  ...sf,
-                  requests: sf.requests.filter((r) => r._id !== itemId)
-                }))
-              }))
-            };
-            
-            if (fromCollectionId === toCollectionId) {
-              const addToTargetFolder = (folders: Folder[]): Folder[] => {
-                return folders.map((f) => {
-                  if (f._id === toFolderId) {
-                    return { ...f, requests: [...f.requests, { ...request, folderId: toFolderId }] };
-                  }
-                  return { ...f, folders: addToTargetFolder(f.folders) };
-                });
-              };
-              
-              if (toFolderId) {
-                return { ...newC, folders: addToTargetFolder(newC.folders) };
-              }
-              return { ...newC, requests: [...newC.requests, { ...request, folderId: undefined }] };
-            }
-            
-            return newC;
-          }
-          
-          return c;
-        });
-        
-        if (!movedItem) return state;
-        
-        return {
-          ...state,
-          collections: collections.map((c) => {
-            if (c._id !== toCollectionId || fromCollectionId === toCollectionId) return c;
-            
-            if (itemType === 'request' && movedItem) {
-              const request = movedItem as ApiRequest;
-              if (toFolderId) {
-                const addToFolder = (folders: Folder[]): Folder[] => {
-                  return folders.map((f) => {
-                    if (f._id === toFolderId) {
-                      return { ...f, requests: [...f.requests, { ...request, folderId: toFolderId, collectionId: toCollectionId }] };
-                    }
-                    return { ...f, folders: addToFolder(f.folders) };
-                  });
-                };
-                return { ...c, folders: addToFolder(c.folders) };
-              }
-              return { ...c, requests: [...c.requests, { ...request, collectionId: toCollectionId, folderId: undefined }] };
-            }
-            return c;
-          })
-        };
+        const collections = moveItemInCollections(state.collections, itemId, itemType, fromCollectionId, toCollectionId, toFolderId);
+        return collections ? { collections } : state;
       }),
       
       setHistory: (history) => set({ history }),
       
-      addToHistory: (request) => set((state) => ({
-        history: [request, ...state.history.slice(0, 99)]
-      })),
+      addToHistory: (request) => {
+        set((state) => ({
+          history: [request, ...state.history.slice(0, 99)]
+        }));
+        apiClient.post('/api/history', { request, workspaceId: request.workspaceId }).catch(() => {});
+      },
       
       clearHistory: () => set({ history: [] }),
       

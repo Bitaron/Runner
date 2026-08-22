@@ -123,23 +123,16 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       
       getInterpolatedValue: (value: string) => {
         const state = get();
-        let result = value;
         
-        const interpolate = (pattern: RegExp, variables: Variable[]) => {
-          result = result.replace(pattern, (match, varName) => {
-            const variable = variables.find((v) => v.key === varName && v.enabled);
-            return variable ? variable.value : match;
-          });
-        };
-        
-        const envPattern = /\{\{([^}]+)\}\}/g;
-        const globalPattern = /\{\{([^}]+)\}\}/g;
-        
+        const pattern = /\{\{([^}]+)\}\}/g;
         const envVars = state.currentEnvironment?.variables || [];
-        interpolate(envPattern, envVars);
-        interpolate(globalPattern, state.globalVariables);
         
-        return result;
+        return value.replace(pattern, (match, varName) => {
+          const variable =
+            envVars.find((v) => v.key === varName && v.enabled) ||
+            state.globalVariables.find((v) => v.key === varName && v.enabled);
+          return variable ? variable.value : match;
+        });
       },
     }),
     {

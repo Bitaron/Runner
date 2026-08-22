@@ -424,4 +424,102 @@ describe('Collections Store', () => {
       expect(newRequest.folderId).toBe('folder:1');
     });
   });
+
+  describe('moveItem', () => {
+    const makeFolder = (id: string, folders: Folder[] = [], requests: ApiRequest[] = []): Folder => ({
+      _id: id,
+      name: id,
+      variables: [],
+      requests,
+      folders,
+    });
+
+    const makeCollection = (id: string, folders: Folder[] = [], requests: ApiRequest[] = []): Collection => ({
+      _id: id,
+      type: 'collection',
+      workspaceId: 'workspace:1',
+      name: id,
+      variables: [],
+      folders,
+      requests,
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-01T00:00:00Z',
+      createdBy: 'user:1',
+    });
+
+    const makeRequest = (id: string): ApiRequest => ({
+      _id: id,
+      type: 'request',
+      workspaceId: 'workspace:1',
+      name: id,
+      method: 'GET',
+      url: '',
+      params: [],
+      headers: [],
+      body: { mode: 'none' },
+      auth: { type: 'none' },
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-01T00:00:00Z',
+      createdBy: 'user:1',
+    });
+
+    it('should move a request from a deeply nested folder to another deeply nested folder', () => {
+      const deepSource = makeFolder('folder:deep-source', [], [makeRequest('request:1')]);
+      const sourceParent = makeFolder('folder:source-parent', [deepSource]);
+      const deepTarget = makeFolder('folder:deep-target');
+      const targetParent = makeFolder('folder:target-parent', [deepTarget]);
+      useCollectionsStore.getState().setCollections([
+        makeCollection('collection:1', [sourceParent, targetParent]),
+      ]);
+
+      useCollectionsStore.getState().moveItem('request:1', 'request', 'collection:1', 'collection:1', 'folder:deep-target');
+
+      const updated = useCollectionsStore.getState().collections.find(c => c._id === 'collection:1');
+      expect(updated?.folders[0].folders[0].requests).toHaveLength(0);
+      expect(updated?.folders[1].folders[0].requests.map(r => r._id)).toEqual(['request:1']);
+      expect(updated?.folders[1].folders[0].requests[0].folderId).toBe('folder:deep-target');
+    });
+
+    it('should move a deeply nested folder to the collection root', () => {
+      const nested = makeFolder('folder:nested', [makeFolder('folder:child')]);
+      const parent = makeFolder('folder:parent', [nested]);
+      useCollectionsStore.getState().setCollections([makeCollection('collection:1', [parent])]);
+
+      useCollectionsStore.getState().moveItem('folder:nested', 'folder', 'collection:1', 'collection:1');
+
+      const updated = useCollectionsStore.getState().collections.find(c => c._id === 'collection:1');
+      expect(updated?.folders.map(f => f._id)).toEqual(['folder:parent', 'folder:nested']);
+      expect(updated?.folders[0].folders).toHaveLength(0);
+      expect(updated?.folders[1].folders.map(f => f._id)).toEqual(['folder:child']);
+    });
+
+    it('should not move a folder into itself or one of its descendants', () => {
+      const child = makeFolder('folder:child');
+      const parent = makeFolder('folder:parent', [child]);
+      useCollectionsStore.getState().setCollections([makeCollection('collection:1', [parent])]);
+
+      useCollectionsStore.getState().moveItem('folder:parent', 'folder', 'collection:1', 'collection:1', 'folder:child');
+
+      const updated = useCollectionsStore.getState().collections.find(c => c._id === 'collection:1');
+      expect(updated?.folders.map(f => f._id)).toEqual(['folder:parent']);
+      expect(updated?.folders[0].folders.map(f => f._id)).toEqual(['folder:child']);
+    });
+
+    it('should move a request between collections and update its collectionId', () => {
+      const deepFolder = makeFolder('folder:deep', [], [makeRequest('request:1')]);
+      useCollectionsStore.getState().setCollections([
+        makeCollection('collection:1', [makeFolder('folder:outer', [deepFolder])]),
+        makeCollection('collection:2'),
+      ]);
+
+      useCollectionsStore.getState().moveItem('request:1', 'request', 'collection:1', 'collection:2');
+
+      const from = useCollectionsStore.getState().collections.find(c => c._id === 'collection:1');
+      const to = useCollectionsStore.getState().collections.find(c => c._id === 'collection:2');
+      expect(from?.folders[0].folders[0].requests).toHaveLength(0);
+      expect(to?.requests.map(r => r._id)).toEqual(['request:1']);
+      expect(to?.requests[0].collectionId).toBe('collection:2');
+      expect(to?.requests[0].folderId).toBeUndefined();
+    });
+  });
 });
