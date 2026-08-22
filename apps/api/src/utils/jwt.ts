@@ -1,8 +1,22 @@
+import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
-const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'your-super-secret-refresh-key-change-in-production';
+const resolveSecret = (envVar: string): string => {
+  const value = process.env[envVar];
+  if (value) return value;
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(`FATAL: ${envVar} environment variable must be set in production`);
+  }
+  console.warn(
+    `[SECURITY WARNING] ${envVar} is not set. Using a random per-process secret; ` +
+      'all tokens will be invalidated on every restart. Set it explicitly for stable sessions.'
+  );
+  return crypto.randomBytes(32).toString('hex');
+};
+
+const JWT_SECRET = resolveSecret('JWT_SECRET');
+const JWT_REFRESH_SECRET = resolveSecret('JWT_REFRESH_SECRET');
 const ACCESS_TOKEN_EXPIRY = '15m';
 const REFRESH_TOKEN_EXPIRY = '7d';
 
@@ -13,20 +27,26 @@ export interface TokenPayload {
   teams?: string[];
 }
 
+export type DecodedTokenPayload = TokenPayload & jwt.JwtPayload;
+
 export const generateAccessToken = (payload: TokenPayload): string => {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: ACCESS_TOKEN_EXPIRY });
+  return jwt.sign({ ...payload, jti: uuidv4() }, JWT_SECRET, { expiresIn: ACCESS_TOKEN_EXPIRY });
 };
 
 export const generateRefreshToken = (payload: TokenPayload): string => {
-  return jwt.sign(payload, JWT_REFRESH_SECRET, { expiresIn: REFRESH_TOKEN_EXPIRY });
+  return jwt.sign({ ...payload, jti: uuidv4() }, JWT_REFRESH_SECRET, { expiresIn: REFRESH_TOKEN_EXPIRY });
 };
 
-export const verifyAccessToken = (token: string): TokenPayload => {
-  return jwt.verify(token, JWT_SECRET) as TokenPayload;
+export const verifyAccessToken = (token: string): DecodedTokenPayload => {
+  return jwt.verify(token, JWT_SECRET) as DecodedTokenPayload;
 };
 
-export const verifyRefreshToken = (token: string): TokenPayload => {
-  return jwt.verify(token, JWT_REFRESH_SECRET) as TokenPayload;
+export const verifyRefreshToken = (token: string): DecodedTokenPayload => {
+  return jwt.verify(token, JWT_REFRESH_SECRET) as DecodedTokenPayload;
+};
+
+export const decodeAccessToken = (token: string): DecodedTokenPayload | null => {
+  return jwt.decode(token) as DecodedTokenPayload | null;
 };
 
 export const generateTokens = (userId: string, email: string, isAnonymous = false): {

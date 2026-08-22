@@ -19,7 +19,7 @@ describe('Auth Middleware', () => {
   });
 
   describe('authMiddleware', () => {
-    it('should call next() with valid token', () => {
+    it('should call next() with valid token', async () => {
       const payload: TokenPayload = {
         userId: 'user:123',
         email: 'test@example.com',
@@ -31,7 +31,7 @@ describe('Auth Middleware', () => {
         authorization: `Bearer ${token}`,
       };
 
-      authMiddleware(
+      await authMiddleware(
         mockRequest as AuthenticatedRequest,
         mockResponse as Response,
         nextFunction
@@ -42,10 +42,10 @@ describe('Auth Middleware', () => {
       expect((mockRequest as AuthenticatedRequest).user?.userId).toBe(payload.userId);
     });
 
-    it('should return 401 when no authorization header', () => {
+    it('should return 401 when no authorization header', async () => {
       mockRequest.headers = {};
 
-      authMiddleware(
+      await authMiddleware(
         mockRequest as AuthenticatedRequest,
         mockResponse as Response,
         nextFunction
@@ -59,12 +59,12 @@ describe('Auth Middleware', () => {
       expect(nextFunction).not.toHaveBeenCalled();
     });
 
-    it('should return 401 when authorization header does not start with Bearer', () => {
+    it('should return 401 when authorization header does not start with Bearer', async () => {
       mockRequest.headers = {
         authorization: 'Basic sometoken',
       };
 
-      authMiddleware(
+      await authMiddleware(
         mockRequest as AuthenticatedRequest,
         mockResponse as Response,
         nextFunction
@@ -74,12 +74,12 @@ describe('Auth Middleware', () => {
       expect(nextFunction).not.toHaveBeenCalled();
     });
 
-    it('should return 401 for invalid token', () => {
+    it('should return 401 for invalid token', async () => {
       mockRequest.headers = {
         authorization: 'Bearer invalid-token',
       };
 
-      authMiddleware(
+      await authMiddleware(
         mockRequest as AuthenticatedRequest,
         mockResponse as Response,
         nextFunction
@@ -93,7 +93,7 @@ describe('Auth Middleware', () => {
       expect(nextFunction).not.toHaveBeenCalled();
     });
 
-    it('should return 401 for expired token', () => {
+    it('should return 401 for expired token', async () => {
       const payload: TokenPayload = {
         userId: 'user:123',
         email: 'test@example.com',
@@ -106,7 +106,7 @@ describe('Auth Middleware', () => {
         authorization: `Bearer ${expiredToken}`,
       };
 
-      authMiddleware(
+      await authMiddleware(
         mockRequest as AuthenticatedRequest,
         mockResponse as Response,
         nextFunction
@@ -119,7 +119,7 @@ describe('Auth Middleware', () => {
   });
 
   describe('optionalAuth', () => {
-    it('should call next() with valid token and set user', () => {
+    it('should call next() with valid token and set user', async () => {
       const payload: TokenPayload = {
         userId: 'user:123',
         email: 'test@example.com',
@@ -131,7 +131,7 @@ describe('Auth Middleware', () => {
         authorization: `Bearer ${token}`,
       };
 
-      optionalAuth(
+      await optionalAuth(
         mockRequest as AuthenticatedRequest,
         mockResponse as Response,
         nextFunction
@@ -141,10 +141,10 @@ describe('Auth Middleware', () => {
       expect((mockRequest as AuthenticatedRequest).user?.userId).toBe(payload.userId);
     });
 
-    it('should call next() without user when no token', () => {
+    it('should call next() without user when no token', async () => {
       mockRequest.headers = {};
 
-      optionalAuth(
+      await optionalAuth(
         mockRequest as AuthenticatedRequest,
         mockResponse as Response,
         nextFunction
@@ -154,12 +154,12 @@ describe('Auth Middleware', () => {
       expect((mockRequest as AuthenticatedRequest).user).toBeUndefined();
     });
 
-    it('should call next() without user for invalid token', () => {
+    it('should call next() without user for invalid token', async () => {
       mockRequest.headers = {
         authorization: 'Bearer invalid-token',
       };
 
-      optionalAuth(
+      await optionalAuth(
         mockRequest as AuthenticatedRequest,
         mockResponse as Response,
         nextFunction
@@ -171,7 +171,7 @@ describe('Auth Middleware', () => {
   });
 
   describe('refreshTokenMiddleware', () => {
-    it('should call next() with valid refresh token', () => {
+    it('should call next() with valid refresh token', async () => {
       const payload: TokenPayload = {
         userId: 'user:123',
         email: 'test@example.com',
@@ -181,7 +181,7 @@ describe('Auth Middleware', () => {
       
       mockRequest.body = { refreshToken };
 
-      refreshTokenMiddleware(
+      await refreshTokenMiddleware(
         mockRequest as Request,
         mockResponse as Response,
         nextFunction
@@ -191,10 +191,10 @@ describe('Auth Middleware', () => {
       expect((mockRequest as AuthenticatedRequest).user?.userId).toBe(payload.userId);
     });
 
-    it('should return 401 when no refresh token in body', () => {
+    it('should return 401 when no refresh token in body', async () => {
       mockRequest.body = {};
 
-      refreshTokenMiddleware(
+      await refreshTokenMiddleware(
         mockRequest as Request,
         mockResponse as Response,
         nextFunction
@@ -208,10 +208,10 @@ describe('Auth Middleware', () => {
       expect(nextFunction).not.toHaveBeenCalled();
     });
 
-    it('should return 401 for invalid refresh token', () => {
+    it('should return 401 for invalid refresh token', async () => {
       mockRequest.body = { refreshToken: 'invalid-token' };
 
-      refreshTokenMiddleware(
+      await refreshTokenMiddleware(
         mockRequest as Request,
         mockResponse as Response,
         nextFunction
