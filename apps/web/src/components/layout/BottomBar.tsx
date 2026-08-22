@@ -37,8 +37,12 @@ export const BottomBar: React.FC<BottomBarProps> = ({
       {/* Left section */}
       <div className="flex items-center gap-1">
         {/* Online status */}
-        <div className={`flex items-center gap-1.5 px-2 py-1 rounded ${isConnected ? 'text-green-400' : 'text-red-400'}`}>
-          {isConnected ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
+        <div
+          role="status"
+          aria-label={isConnected ? 'Connected' : 'Disconnected'}
+          className={`flex items-center gap-1.5 px-2 py-1 rounded ${isConnected ? 'text-green-400' : 'text-red-400'}`}
+        >
+          {isConnected ? <Wifi className="w-3.5 h-3.5"  aria-hidden="true" /> : <WifiOff className="w-3.5 h-3.5"  aria-hidden="true" />}
           <span className="text-xs">{isConnected ? 'Online' : 'Offline'}</span>
         </div>
 
@@ -46,10 +50,12 @@ export const BottomBar: React.FC<BottomBarProps> = ({
 
         {/* Find/Replace (non-functional) */}
         <button 
-          className="flex items-center gap-1.5 px-2 py-1 text-xs text-gray-400 hover:text-white hover:bg-[#3d3d3d] rounded transition-colors"
+          disabled
+          aria-disabled="true"
+          className="flex items-center gap-1.5 px-2 py-1 text-xs text-gray-400 hover:text-white hover:bg-[#3d3d3d] rounded transition-colors opacity-50 cursor-not-allowed"
           title="Find/Replace (coming soon)"
         >
-          <Search className="w-3.5 h-3.5" />
+          <Search className="w-3.5 h-3.5"  aria-hidden="true" />
           <span>Find</span>
         </button>
 
@@ -58,7 +64,7 @@ export const BottomBar: React.FC<BottomBarProps> = ({
           onClick={onConsoleOpen}
           className="flex items-center gap-1.5 px-2 py-1 text-xs text-gray-400 hover:text-white hover:bg-[#3d3d3d] rounded transition-colors"
         >
-          <Terminal className="w-3.5 h-3.5" />
+          <Terminal className="w-3.5 h-3.5"  aria-hidden="true" />
           <span>Console</span>
         </button>
 
@@ -88,8 +94,9 @@ export const BottomBar: React.FC<BottomBarProps> = ({
           onClick={onHelpOpen}
           className="flex items-center justify-center w-6 h-6 text-gray-400 hover:text-white hover:bg-[#3d3d3d] rounded-full transition-colors"
           title="Help"
+          aria-label="Help"
         >
-          <HelpCircle className="w-4 h-4" />
+          <HelpCircle className="w-4 h-4"  aria-hidden="true" />
         </button>
       </div>
 
@@ -97,6 +104,8 @@ export const BottomBar: React.FC<BottomBarProps> = ({
       <div className="flex items-center gap-1">
         {/* Runner (non-functional) */}
         <button 
+          disabled
+          aria-disabled="true"
           className="flex items-center gap-1.5 px-2 py-1 text-xs text-gray-400 hover:text-white hover:bg-[#3d3d3d] rounded transition-colors opacity-50 cursor-not-allowed"
           title="Runner (coming soon)"
         >
@@ -106,24 +115,33 @@ export const BottomBar: React.FC<BottomBarProps> = ({
 
         {/* Capture requests (non-functional) */}
         <button 
+          disabled
+          aria-disabled="true"
           className="p-1.5 text-gray-400 hover:text-white hover:bg-[#3d3d3d] rounded transition-colors opacity-50 cursor-not-allowed"
           title="Capture requests (coming soon)"
+          aria-label="Capture requests"
         >
-          <Terminal className="w-3.5 h-3.5" />
+          <Terminal className="w-3.5 h-3.5"  aria-hidden="true" />
         </button>
 
         {/* Cookies (non-functional) */}
         <button 
+          disabled
+          aria-disabled="true"
           className="p-1.5 text-gray-400 hover:text-white hover:bg-[#3d3d3d] rounded transition-colors opacity-50 cursor-not-allowed"
           title="Cookies (coming soon)"
+          aria-label="Cookies"
         >
           <Cookie className="w-3.5 h-3.5" />
         </button>
 
         {/* Vault (non-functional) */}
         <button 
+          disabled
+          aria-disabled="true"
           className="p-1.5 text-gray-400 hover:text-white hover:bg-[#3d3d3d] rounded transition-colors opacity-50 cursor-not-allowed"
           title="Vault (coming soon)"
+          aria-label="Vault"
         >
           <MoreHorizontal className="w-3.5 h-3.5" />
         </button>
@@ -132,6 +150,7 @@ export const BottomBar: React.FC<BottomBarProps> = ({
         <button 
           className="p-1.5 text-gray-400 hover:text-white hover:bg-[#3d3d3d] rounded transition-colors"
           title="Trash"
+          aria-label="Trash"
         >
           <Trash2 className="w-3.5 h-3.5" />
         </button>

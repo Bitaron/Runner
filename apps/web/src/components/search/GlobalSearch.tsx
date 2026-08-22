@@ -1,14 +1,15 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
 import { apiClient } from '@/lib/api';
+import { getMethodColor } from '@/lib/methodColors';
 import { Search, FileJson, Globe, Folder, X, Loader2 } from 'lucide-react';
 import { useCollectionsStore } from '@/stores/collectionsStore';
-import type { ApiRequest, Collection } from '@apiforge/shared';
+import type { ApiRequest, Collection, Folder as FolderType } from '@apiforge/shared';
 
 interface SearchResult {
   type: 'collection' | 'request' | 'folder';
@@ -39,6 +40,26 @@ export const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose, onS
   const [searchType, setSearchType] = useState<'all' | 'request' | 'collection'>('all');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const { collections } = useCollectionsStore();
+
+  const isMac =
+    typeof navigator !== 'undefined' &&
+    /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
+  const shortcutHint = isMac ? '⌘K' : 'Ctrl K';
+
+  const breadcrumbPaths = useMemo(() => {
+    const map = new Map<string, string>();
+    const walk = (folders: FolderType[], path: string[]) => {
+      folders.forEach((folder) => {
+        const nextPath = [...path, folder.name];
+        folder.requests.forEach((r) => map.set(r._id, nextPath.join(' › ')));
+        walk(folder.folders, nextPath);
+      });
+    };
+    collections.forEach((c) => {
+      walk(c.folders, [c.name]);
+    });
+    return map;
+  }, [collections]);
 
   const handleSearch = useCallback(async (searchQuery: string) => {
     if (!searchQuery.trim()) {
@@ -112,17 +133,6 @@ export const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose, onS
     }
   };
 
-  const getMethodColor = (method: string) => {
-    const colors: Record<string, string> = {
-      GET: 'text-[#61affe]',
-      POST: 'text-[#49cc90]',
-      PUT: 'text-[#fca130]',
-      PATCH: 'text-[#50e3c2]',
-      DELETE: 'text-[#f93e3e]',
-    };
-    return colors[method] || 'text-gray-400';
-  };
-
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Search" size="lg">
       <div className="space-y-4">
@@ -135,6 +145,8 @@ export const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose, onS
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Search by name or URL..."
+              autoComplete="off"
+              spellCheck={false}
               className="w-full pl-10 pr-4 py-3 bg-[#2d2d2d] border border-[#3d3d3d] rounded-lg text-gray-200 placeholder-gray-500 focus:outline-none focus:border-[#ff6b35]"
               autoFocus
             />
@@ -171,16 +183,21 @@ export const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose, onS
                   <div className="flex-1 text-left">
                     <div className="flex items-center gap-2">
                       {result.method && (
-                        <span className={`text-xs font-bold ${getMethodColor(result.method)}`}>
+                        <span
+                          className="text-xs font-bold"
+                          style={{ color: getMethodColor(result.method) }}
+                        >
                           {result.method}
                         </span>
                       )}
                       <span className="text-gray-200 truncate">{result.name}</span>
                     </div>
-                    {result.collectionName && (
+                    {(breadcrumbPaths.get(result.id) || result.collectionName) && (
                       <div className="text-xs text-gray-500 flex items-center gap-1 mt-1">
-                        <FileJson className="w-3 h-3" />
-                        {result.collectionName}
+                        <FileJson className="w-3 h-3 shrink-0" />
+                        <span className="truncate">
+                          {breadcrumbPaths.get(result.id) ?? result.collectionName}
+                        </span>
                       </div>
                     )}
                   </div>
@@ -219,7 +236,15 @@ export const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose, onS
             <span>Enter Select</span>
             <span>Esc Close</span>
           </div>
-          <span>{results.length} results</span>
+          <div className="flex items-center gap-4">
+            <span className="flex items-center gap-1.5">
+              <kbd className="border border-[#3d3d3d] rounded px-1.5 py-0.5 text-[10px] font-mono bg-[#2d2d2d] text-gray-500">
+                {shortcutHint}
+              </kbd>
+              to toggle
+            </span>
+            <span>{results.length} results</span>
+          </div>
         </div>
       </div>
     </Modal>

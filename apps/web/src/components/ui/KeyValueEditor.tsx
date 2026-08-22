@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { cn } from '@/lib/utils';
-import { Plus, Trash2, GripVertical, Wand2, X } from 'lucide-react';
+import { Plus, Trash2, GripVertical, Wand2 } from 'lucide-react';
 import { Input } from './Input';
 import { Modal } from './Modal';
 import type { KeyValue } from '@apiforge/shared';
@@ -28,11 +28,31 @@ export const KeyValueEditor: React.FC<KeyValueEditorProps> = ({
 }) => {
   const [showBulkEdit, setShowBulkEdit] = useState(false);
   const [bulkEditText, setBulkEditText] = useState('');
-  const [autocompleteIndex, setAutocompleteIndex] = useState<{ row: number; field: 'key' | 'value' } | null>(null);
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const [suggestionFilter, setSuggestionFilter] = useState('');
-  const [focusedRow, setFocusedRow] = useState<number>(-1);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [autocompleteTarget, setAutocompleteTarget] = useState<{ row: number; field: 'key' | 'value' } | null>(null);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const blurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const closeSuggestions = () => setAutocompleteTarget(null);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeSuggestions();
+    };
+    document.addEventListener('scroll', closeSuggestions, true);
+    window.addEventListener('resize', closeSuggestions);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('scroll', closeSuggestions, true);
+      window.removeEventListener('resize', closeSuggestions);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [autocompleteTarget]);
+
+  useEffect(() => {
+    return () => {
+      if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current);
+    };
+  }, []);
 
   const addItem = () => {
     onChange([...items, { key: '', value: '', description: '', disabled: false }]);
@@ -48,6 +68,13 @@ export const KeyValueEditor: React.FC<KeyValueEditorProps> = ({
     onChange(items.filter((_, i) => i !== index));
   };
 
+  const reorderItems = (from: number, to: number) => {
+    const newItems = [...items];
+    const [moved] = newItems.splice(from, 1);
+    newItems.splice(to, 0, moved);
+    onChange(newItems);
+  };
+
   const openBulkEdit = () => {
     const text = items
       .map(item => `${item.key}: ${item.value}`)
@@ -59,7 +86,7 @@ export const KeyValueEditor: React.FC<KeyValueEditorProps> = ({
   const saveBulkEdit = () => {
     const newItems: KeyValue[] = [];
     const lines = bulkEditText.split('\n').filter(line => line.trim());
-    
+
     for (const line of lines) {
       const colonIndex = line.indexOf(':');
       if (colonIndex > 0) {
@@ -78,7 +105,7 @@ export const KeyValueEditor: React.FC<KeyValueEditorProps> = ({
         });
       }
     }
-    
+
     onChange(newItems);
     setShowBulkEdit(false);
   };
@@ -90,18 +117,31 @@ export const KeyValueEditor: React.FC<KeyValueEditorProps> = ({
       .slice(0, 5);
   };
 
+  const openAutocomplete = (row: number, field: 'key' | 'value') => {
+    if (blurTimeoutRef.current) {
+      clearTimeout(blurTimeoutRef.current);
+      blurTimeoutRef.current = null;
+    }
+    setAutocompleteTarget({ row, field });
+  };
+
+  const scheduleAutocompleteClose = () => {
+    if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current);
+    blurTimeoutRef.current = setTimeout(() => setAutocompleteTarget(null), 150);
+  };
+
   const insertVariable = (variable: { key: string; value: string }, row: number, field: 'key' | 'value') => {
     const prefix = field === 'key' ? '' : '{{';
     const suffix = field === 'key' ? '' : '}}';
     updateItem(row, field, prefix + variable.key + suffix);
-    setShowSuggestions(false);
+    setAutocompleteTarget(null);
   };
 
   return (
     <div className={cn('space-y-2', className)}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase">
-          <span className="w-8"></span>
+          <span className="w-10"></span>
           <span className="flex-1">Key</span>
           <span className="flex-1">Value</span>
           {showDescription && <span className="flex-1">Description</span>}
@@ -117,46 +157,70 @@ export const KeyValueEditor: React.FC<KeyValueEditorProps> = ({
           </button>
         )}
       </div>
-      
+
       {items.map((item, index) => (
         <div
           key={index}
+          draggable
+          onDragStart={() => setDragIndex(index)}
+          onDragOver={(e) => {
+            e.preventDefault();
+            if (dragIndex !== null && dragIndex !== index) setDragOverIndex(index);
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            if (dragIndex !== null && dragIndex !== index) reorderItems(dragIndex, index);
+            setDragIndex(null);
+            setDragOverIndex(null);
+          }}
+          onDragEnd={() => {
+            setDragIndex(null);
+            setDragOverIndex(null);
+          }}
           className={cn(
-            'flex items-center gap-2 group',
-            item.disabled && 'opacity-50'
+            'flex items-center gap-2 group rounded-md',
+            item.disabled && 'opacity-50',
+            dragIndex === index && 'opacity-40',
+            dragOverIndex === index && dragIndex !== null && dragIndex !== index && 'ring-1 ring-[#ff6b35]'
           )}
         >
-          <button
-            onClick={() => updateItem(index, 'disabled', !item.disabled)}
-            className={cn(
-              'w-8 flex items-center justify-center cursor-grab text-gray-500 hover:text-gray-300',
-              item.disabled && 'line-through'
-            )}
+          <input
+            type="checkbox"
+            checked={!item.disabled}
+            onChange={() => updateItem(index, 'disabled', !item.disabled)}
+            aria-label={`Enable ${item.key || 'row'}`}
+            className="w-4 h-4 accent-[#ff6b35] cursor-pointer shrink-0"
+          />
+          <span
+            aria-hidden="true"
+            title="Drag to reorder"
+            className="flex items-center justify-center text-gray-500 group-hover:text-gray-300 cursor-grab active:cursor-grabbing"
           >
             <GripVertical className="w-4 h-4" />
-          </button>
-          
+          </span>
+
           <div className="flex-1 relative">
             <Input
               value={item.key}
               onChange={(e) => updateItem(index, 'key', e.target.value)}
               placeholder={keyPlaceholder}
               className="flex-1"
-              onFocus={() => setFocusedRow(index)}
               onKeyDown={(e) => {
                 if (e.key === '{' || e.key === '{{') {
-                  setSuggestionFilter('');
-                  setShowSuggestions(true);
-                  setAutocompleteIndex({ row: index, field: 'key' });
+                  openAutocomplete(index, 'key');
                 }
               }}
+              onBlur={scheduleAutocompleteClose}
             />
-            {focusedRow === index && variables && variables.length > 0 && item.key && (
+            {autocompleteTarget?.row === index && autocompleteTarget.field === 'key' && getSuggestions(item.key).length > 0 && (
               <div className="absolute top-full left-0 mt-1 w-48 bg-[#2d2d2e] border border-[#3d3d3d] rounded-lg shadow-xl z-10">
                 {getSuggestions(item.key).map(v => (
                   <button
                     key={v.key}
-                    onClick={() => insertVariable(v, index, 'key')}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      insertVariable(v, index, 'key');
+                    }}
                     className="w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-[#3d3d3d] flex items-center justify-between"
                   >
                     <span className="font-mono text-[#ff6b35]">{`{{${v.key}}}`}</span>
@@ -166,28 +230,29 @@ export const KeyValueEditor: React.FC<KeyValueEditorProps> = ({
               </div>
             )}
           </div>
-          
+
           <div className="flex-1 relative">
             <Input
               value={item.value}
               onChange={(e) => updateItem(index, 'value', e.target.value)}
               placeholder={valuePlaceholder}
               className="flex-1"
-              onFocus={() => setFocusedRow(index)}
               onKeyDown={(e) => {
                 if (e.key === '{' || e.key === '{{') {
-                  setSuggestionFilter('');
-                  setShowSuggestions(true);
-                  setAutocompleteIndex({ row: index, field: 'value' });
+                  openAutocomplete(index, 'value');
                 }
               }}
+              onBlur={scheduleAutocompleteClose}
             />
-            {focusedRow === index && variables && variables.length > 0 && item.value && (
+            {autocompleteTarget?.row === index && autocompleteTarget.field === 'value' && getSuggestions(item.value).length > 0 && (
               <div className="absolute top-full left-0 mt-1 w-48 bg-[#2d2d2e] border border-[#3d3d3d] rounded-lg shadow-xl z-10">
                 {getSuggestions(item.value).map(v => (
                   <button
                     key={v.key}
-                    onClick={() => insertVariable(v, index, 'value')}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      insertVariable(v, index, 'value');
+                    }}
                     className="w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-[#3d3d3d] flex items-center justify-between"
                   >
                     <span className="font-mono text-[#ff6b35]">{`{{${v.key}}}`}</span>
@@ -197,7 +262,7 @@ export const KeyValueEditor: React.FC<KeyValueEditorProps> = ({
               </div>
             )}
           </div>
-          
+
           {showDescription && (
             <Input
               value={item.description || ''}
@@ -206,7 +271,7 @@ export const KeyValueEditor: React.FC<KeyValueEditorProps> = ({
               className="flex-1"
             />
           )}
-          
+
           <button
             onClick={() => removeItem(index)}
             className="w-8 flex items-center justify-center text-gray-500 hover:text-[#f44336] transition-colors"
@@ -215,7 +280,7 @@ export const KeyValueEditor: React.FC<KeyValueEditorProps> = ({
           </button>
         </div>
       ))}
-      
+
       <button
         onClick={addItem}
         className="flex items-center gap-2 text-sm text-gray-400 hover:text-gray-200 transition-colors"
@@ -229,7 +294,7 @@ export const KeyValueEditor: React.FC<KeyValueEditorProps> = ({
         onClose={() => setShowBulkEdit(false)}
         title="Bulk Edit"
       >
-        <div className="space-y-4">
+        <div role="dialog" aria-modal="true" aria-label="Bulk Edit" className="space-y-4">
           <p className="text-sm text-gray-400">Edit key-value pairs as text. Each line should be in the format: <code className="text-[#ff6b35]">key: value</code></p>
           <textarea
             value={bulkEditText}
@@ -240,12 +305,14 @@ export const KeyValueEditor: React.FC<KeyValueEditorProps> = ({
           <div className="flex justify-end gap-2">
             <button
               onClick={() => setShowBulkEdit(false)}
+              aria-label="Cancel bulk edit"
               className="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors"
             >
               Cancel
             </button>
             <button
               onClick={saveBulkEdit}
+              aria-label="Apply bulk edit"
               className="px-4 py-2 text-sm bg-[#ff6b35] text-white rounded hover:bg-[#e55a2b] transition-colors"
             >
               Save

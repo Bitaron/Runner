@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Tabs, TabPanel } from '../ui/Tabs';
 import { Button } from '../ui/Button';
@@ -14,6 +14,27 @@ interface ResponseViewerProps {
   testResults: Array<{ name: string; passed: boolean; error?: string }>;
 }
 
+const toBase64 = (body: string | ArrayBuffer | Uint8Array): string => {
+  let bytes: Uint8Array;
+  if (body instanceof ArrayBuffer) {
+    bytes = new Uint8Array(body);
+  } else if (body instanceof Uint8Array) {
+    bytes = body;
+  } else {
+    bytes = new TextEncoder().encode(body);
+  }
+
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    for (let j = 0; j < chunk.length; j++) {
+      binary += String.fromCharCode(chunk[j]);
+    }
+  }
+  return btoa(binary);
+};
+
 export const ResponseViewer: React.FC<ResponseViewerProps> = ({
   response,
   isLoading,
@@ -23,6 +44,20 @@ export const ResponseViewer: React.FC<ResponseViewerProps> = ({
   const [activeTab, setActiveTab] = useState('body');
   const [bodyView, setBodyView] = useState<'pretty' | 'raw' | 'preview'>('pretty');
   const [copied, setCopied] = useState(false);
+  const [elapsedMs, setElapsedMs] = useState(0);
+
+  useEffect(() => {
+    if (!isLoading) {
+      setElapsedMs(0);
+      return undefined;
+    }
+    const start = Date.now();
+    setElapsedMs(0);
+    const intervalId = setInterval(() => {
+      setElapsedMs(Date.now() - start);
+    }, 100);
+    return () => clearInterval(intervalId);
+  }, [isLoading]);
 
   const tabs = [
     { id: 'body', label: 'Body' },
@@ -33,7 +68,7 @@ export const ResponseViewer: React.FC<ResponseViewerProps> = ({
   ];
 
   const getStatusColor = (status: number) => {
-    if (status >= 200 && status < 300) return 'text-green-500';
+    if (status >= 200 && status < 300) return 'text-green-400';
     if (status >= 300 && status < 400) return 'text-yellow-500';
     if (status >= 400 && status < 500) return 'text-orange-500';
     if (status >= 500) return 'text-red-500';
@@ -132,7 +167,10 @@ export const ResponseViewer: React.FC<ResponseViewerProps> = ({
       <div className="flex items-center justify-center h-full">
         <div className="flex flex-col items-center gap-4">
           <div className="w-8 h-8 border-2 border-[#ff6b35] border-t-transparent rounded-full animate-spin" />
-          <p className="text-gray-400">Sending request...</p>
+          <div className="flex items-center gap-2">
+            <p className="text-gray-400">Sending request...</p>
+            <span className="text-sm text-[#ff6b35] font-mono">{(elapsedMs / 1000).toFixed(1)}s</span>
+          </div>
         </div>
       </div>
     );
@@ -188,10 +226,10 @@ export const ResponseViewer: React.FC<ResponseViewerProps> = ({
                     key={view}
                     onClick={() => setBodyView(view)}
                     className={cn(
-                      'px-3 py-1 text-xs font-medium rounded capitalize',
+                      'px-3 py-1 text-xs font-medium capitalize border-b-2 transition-colors duration-200',
                       bodyView === view
-                        ? 'bg-[#3d3d3d] text-white'
-                        : 'text-gray-400 hover:text-white'
+                        ? 'text-white border-[#ff6b35]'
+                        : 'text-gray-400 hover:text-gray-200 border-transparent'
                     )}
                   >
                     {view}
@@ -224,7 +262,7 @@ export const ResponseViewer: React.FC<ResponseViewerProps> = ({
               <div className="bg-[#1e1e1e] rounded-md h-[calc(100%-40px)] overflow-auto">
                 {response.contentType.includes('image') ? (
                   <img
-                    src={`data:${response.contentType};base64,${Buffer.from(response.body).toString('base64')}`}
+                    src={`data:${response.contentType};base64,${toBase64(response.body)}`}
                     alt="Response preview"
                     className="max-w-full h-auto"
                   />
@@ -295,22 +333,27 @@ export const ResponseViewer: React.FC<ResponseViewerProps> = ({
             <div className="p-4">
               <p className="text-gray-400 text-sm mb-4">Visualize your response data in different formats</p>
               <div className="grid grid-cols-2 gap-4">
-                <button className="p-4 bg-[#1e1e1e] rounded-lg border border-[#3d3d3d] hover:border-[#ff6b35] transition-colors text-left">
-                  <h4 className="text-white font-medium mb-2">JSON Tree</h4>
-                  <p className="text-gray-500 text-sm">View response as interactive JSON tree</p>
-                </button>
-                <button className="p-4 bg-[#1e1e1e] rounded-lg border border-[#3d3d3d] hover:border-[#ff6b35] transition-colors text-left">
-                  <h4 className="text-white font-medium mb-2">Table View</h4>
-                  <p className="text-gray-500 text-sm">Convert JSON array to table</p>
-                </button>
-                <button className="p-4 bg-[#1e1e1e] rounded-lg border border-[#3d3d3d] hover:border-[#ff6b35] transition-colors text-left">
-                  <h4 className="text-white font-medium mb-2">Chart</h4>
-                  <p className="text-gray-500 text-sm">Visualize data as bar/line chart</p>
-                </button>
-                <button className="p-4 bg-[#1e1e1e] rounded-lg border border-[#3d3d3d] hover:border-[#ff6b35] transition-colors text-left">
-                  <h4 className="text-white font-medium mb-2">HTML Preview</h4>
-                  <p className="text-gray-500 text-sm">Render HTML response in frame</p>
-                </button>
+                {[
+                  { title: 'JSON Tree', description: 'View response as interactive JSON tree' },
+                  { title: 'Table View', description: 'Convert JSON array to table' },
+                  { title: 'Chart', description: 'Visualize data as bar/line chart' },
+                  { title: 'HTML Preview', description: 'Render HTML response in frame' },
+                ].map(({ title, description }) => (
+                  <button
+                    key={title}
+                    disabled
+                    aria-disabled="true"
+                    className="p-4 bg-[#1e1e1e] rounded-lg border border-[#3d3d3d] text-left opacity-60 cursor-not-allowed"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="text-white font-medium">{title}</h4>
+                      <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-[#ff6b35]/10 text-[#ff6b35] border border-[#ff6b35]/30">
+                        Coming soon
+                      </span>
+                    </div>
+                    <p className="text-gray-500 text-sm">{description}</p>
+                  </button>
+                ))}
               </div>
             </div>
           </TabPanel>
@@ -327,7 +370,7 @@ export const ResponseViewer: React.FC<ResponseViewerProps> = ({
                     key={index}
                     className={cn(
                       'p-3 rounded flex items-center gap-2',
-                      result.passed ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'
+                      result.passed ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-500'
                     )}
                   >
                     <span className="text-lg">{result.passed ? '✓' : '✗'}</span>

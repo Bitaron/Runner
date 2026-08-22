@@ -25,6 +25,8 @@ import {
   FolderPlus,
   Zap,
   Circle,
+  History as HistoryIcon,
+  Droplet,
 } from 'lucide-react';
 import type { Collection, Folder, ApiRequest, Environment } from '@apiforge/shared';
 import { Dropdown } from '../ui/Dropdown';
@@ -33,6 +35,7 @@ import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
 import { Logo, LogoWithText } from '../ui/Logo';
 import { apiClient } from '@/lib/api';
+import { getMethodColor } from '@/lib/methodColors';
 
 interface SidebarProps {
   onSelectRequest: (request: ApiRequest, collectionId?: string, folderId?: string) => void;
@@ -84,9 +87,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [newCollectionName, setNewCollectionName] = useState('');
   const [importError, setImportError] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
-  
+  const [activeTreeItemId, setActiveTreeItemId] = useState<string | null>(null);
+
   const sidebarRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
+  const newDropdownRef = useRef<HTMLDivElement>(null);
+  const treeRef = useRef<HTMLDivElement>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   const { collections, addCollection, removeCollection } = useCollectionsStore();
   const { history } = useCollectionsStore();
@@ -140,6 +147,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
     };
   }, [onWidthChange]);
 
+  useEffect((): void | (() => void) => {
+    if (!showNewDropdown) return;
+
+    const handlePointerDown = (e: MouseEvent) => {
+      if (newDropdownRef.current && !newDropdownRef.current.contains(e.target as Node)) {
+        setShowNewDropdown(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowNewDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [showNewDropdown]);
+
   const toggleCollection = (id: string) => {
     const newExpanded = new Set(expandedCollections);
     if (newExpanded.has(id)) {
@@ -160,8 +189,64 @@ export const Sidebar: React.FC<SidebarProps> = ({
     setExpandedFolders(newExpanded);
   };
 
-  const getMethodClass = (method: string) => {
-    return cn('http-method', method.toLowerCase());
+  const toggleTreeNode = (id: string) => {
+    if (collections.some((c) => c._id === id)) {
+      toggleCollection(id);
+    } else {
+      toggleFolder(id);
+    }
+  };
+
+  const getMethodStyle = (method: string): React.CSSProperties => ({
+    color: getMethodColor(method),
+  });
+
+  /**
+   * Keyboard navigation for the collections tree (issue 3).
+   * ArrowUp/ArrowDown move focus between visible treeitems,
+   * ArrowRight expands a collapsed folder (or moves down),
+   * ArrowLeft collapses an expanded folder (or moves to parent).
+   */
+  const handleTreeKeyDown = (e: React.KeyboardEvent) => {
+    if (!['ArrowDown', 'ArrowUp', 'ArrowRight', 'ArrowLeft'].includes(e.key)) return;
+    const tree = treeRef.current;
+    if (!tree) return;
+
+    const items = Array.from(tree.querySelectorAll<HTMLElement>('[role="treeitem"]'));
+    const current = (e.target as HTMLElement).closest<HTMLElement>('[role="treeitem"]');
+    const index = current ? items.indexOf(current) : -1;
+    const nodeId = current?.dataset.treeId;
+
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        items[index + 1]?.focus();
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        items[index - 1]?.focus();
+        break;
+      case 'ArrowRight':
+        e.preventDefault();
+        if (nodeId && current?.getAttribute('aria-expanded') === 'false') {
+          toggleTreeNode(nodeId);
+        } else {
+          items[index + 1]?.focus();
+        }
+        break;
+      case 'ArrowLeft': {
+        e.preventDefault();
+        if (nodeId && current?.getAttribute('aria-expanded') === 'true') {
+          toggleTreeNode(nodeId);
+        } else {
+          const parentItem = current
+            ?.closest('[role="group"]')
+            ?.parentElement?.closest<HTMLElement>('[role="treeitem"]');
+          (parentItem ?? items[index - 1])?.focus();
+        }
+        break;
+      }
+    }
   };
 
   const handleCreateCollection = () => {
@@ -223,51 +308,87 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
     return (
       <div key={folder._id} style={{ marginLeft: depth * 16 }}>
-        <div className="flex items-center gap-1 px-2 py-1 hover:bg-[#333334] rounded cursor-pointer group">
-          <ChevronRight 
-            className={cn('w-4 h-4 transition-transform', isExpanded && 'rotate-90')} 
+        <div
+          role="treeitem"
+          data-tree-id={folder._id}
+          aria-expanded={isExpanded}
+          aria-selected={activeFolderId === folder._id ? true : undefined}
+          aria-label={`Folder ${folder.name}`}
+          tabIndex={activeTreeItemId === folder._id ? 0 : -1}
+          onFocus={() => setActiveTreeItemId(folder._id)}
+          onClick={() => {
+            onSelectFolder?.(collection, folder);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              onSelectFolder?.(collection, folder);
+              if (!isExpanded) toggleFolder(folder._id);
+            } else {
+              handleTreeKeyDown(e);
+            }
+          }}
+          className="flex items-center gap-1 px-2 py-1 hover:bg-[#333334] rounded cursor-pointer group focus:outline-none focus-visible:bg-[#333334] focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[#ff6b35]"
+        >
+          <span
+            aria-hidden="true"
+            title={isExpanded ? `Collapse ${folder.name}` : `Expand ${folder.name}`}
+            className="flex shrink-0"
             onClick={(e) => {
               e.stopPropagation();
               toggleFolder(folder._id);
             }}
-          />
-          <FolderOpen className="w-4 h-4 text-[#d4a574]" />
-          <span 
-            className="flex-1 text-sm truncate hover:text-[#ff6b35] transition-colors"
-            onClick={(e) => {
-              e.stopPropagation();
-              onSelectFolder?.(collection, folder);
-            }}
           >
+            <ChevronRight className={cn('w-4 h-4 transition-transform', isExpanded && 'rotate-90')} />
+          </span>
+          <FolderOpen className="w-4 h-4 text-[#d4a574]" />
+          <span className="flex-1 text-sm truncate hover:text-[#ff6b35] transition-colors">
             {folder.name}
           </span>
-          <Dropdown
-            trigger={
-              <MoreVertical
-                className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity"
-                onClick={(e) => e.stopPropagation()}
-              />
-            }
-            items={[
-              { id: 'rename', label: 'Rename' },
-              { id: 'delete', label: 'Delete', danger: true },
-            ]}
-          />
+          <span className="shrink-0" onClick={(e) => e.stopPropagation()}>
+            <Dropdown
+              trigger={
+                <MoreVertical
+                  className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity"
+                  onClick={(e) => e.stopPropagation()}
+                />
+              }
+              items={[
+                { id: 'rename', label: 'Rename' },
+                { id: 'delete', label: 'Delete', danger: true },
+              ]}
+            />
+          </span>
         </div>
         {isExpanded && (
-          <>
+          <div role="group" aria-label={`Contents of ${folder.name}`}>
             {folderRequests.map((request) => (
               <div
                 key={request._id}
-                className="flex items-center gap-2 px-2 py-1 hover:bg-[#333334] rounded cursor-pointer ml-6"
+                role="treeitem"
+                data-tree-id={request._id}
+                aria-label={`${request.method} ${request.name}`}
+                tabIndex={activeTreeItemId === request._id ? 0 : -1}
+                onFocus={() => setActiveTreeItemId(request._id)}
                 onClick={() => onSelectRequest(request, collection._id, folder._id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onSelectRequest(request, collection._id, folder._id);
+                  } else {
+                    handleTreeKeyDown(e);
+                  }
+                }}
+                className="flex items-center gap-2 px-2 py-1 hover:bg-[#333334] rounded cursor-pointer ml-6 focus:outline-none focus-visible:bg-[#333334] focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[#ff6b35]"
               >
-                <span className={getMethodClass(request.method)}>{request.method}</span>
+                <span className="http-method w-12 shrink-0" style={getMethodStyle(request.method)}>
+                  {request.method}
+                </span>
                 <span className="flex-1 text-sm truncate">{request.name}</span>
               </div>
             ))}
             {folder.folders.map((subFolder) => renderFolder(subFolder, collection, folder._id, depth + 1))}
-          </>
+          </div>
         )}
       </div>
     );
@@ -283,54 +404,98 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
     return (
       <div key={collection._id}>
-        <div className="flex items-center gap-1 px-2 py-1 hover:bg-[#333334] rounded cursor-pointer group">
-          <ChevronRight 
-            className={cn('w-4 h-4 transition-transform', isExpanded && 'rotate-90')} 
+        <div
+          role="treeitem"
+          data-tree-id={collection._id}
+          aria-expanded={isExpanded}
+          aria-selected={activeCollectionId === collection._id ? true : undefined}
+          aria-label={`Collection ${collection.name}`}
+          tabIndex={
+            activeTreeItemId
+              ? activeTreeItemId === collection._id
+                ? 0
+                : -1
+              : collections[0]?._id === collection._id
+                ? 0
+                : -1
+          }
+          onFocus={() => setActiveTreeItemId(collection._id)}
+          onClick={() => {
+            onSelectCollection?.(collection);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              onSelectCollection?.(collection);
+              if (!isExpanded) toggleCollection(collection._id);
+            } else {
+              handleTreeKeyDown(e);
+            }
+          }}
+          className="flex items-center gap-1 px-2 py-1 hover:bg-[#333334] rounded cursor-pointer group focus:outline-none focus-visible:bg-[#333334] focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[#ff6b35]"
+        >
+          <span
+            aria-hidden="true"
+            title={isExpanded ? `Collapse ${collection.name}` : `Expand ${collection.name}`}
+            className="flex shrink-0"
             onClick={(e) => {
               e.stopPropagation();
               toggleCollection(collection._id);
             }}
-          />
-          <FolderOpen className="w-4 h-4 text-[#d4a574]" />
-          <span 
-            className="flex-1 text-sm truncate hover:text-[#ff6b35] transition-colors"
-            onClick={(e) => {
-              e.stopPropagation();
-              onSelectCollection?.(collection);
-            }}
           >
+            <ChevronRight className={cn('w-4 h-4 transition-transform', isExpanded && 'rotate-90')} />
+          </span>
+          <FolderOpen className="w-4 h-4 text-[#d4a574]" />
+          <span className="flex-1 text-sm truncate hover:text-[#ff6b35] transition-colors">
             {collection.name}
           </span>
-          <Dropdown
-            trigger={
-              <MoreVertical
-                className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity"
-                onClick={(e) => e.stopPropagation()}
-              />
-            }
-            items={[
-              { id: 'addRequest', label: 'Add Request' },
-              { id: 'addFolder', label: 'Add Folder' },
-              { id: 'edit', label: 'Edit' },
-              { id: 'export', label: 'Export' },
-              { id: 'delete', label: 'Delete', danger: true },
-            ]}
-          />
+          <span className="shrink-0" onClick={(e) => e.stopPropagation()}>
+            <Dropdown
+              trigger={
+                <MoreVertical
+                  className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity"
+                  onClick={(e) => e.stopPropagation()}
+                />
+              }
+              items={[
+                { id: 'addRequest', label: 'Add Request' },
+                { id: 'addFolder', label: 'Add Folder' },
+                { id: 'edit', label: 'Edit' },
+                { id: 'export', label: 'Export' },
+                { id: 'delete', label: 'Delete', danger: true },
+              ]}
+            />
+          </span>
         </div>
         {isExpanded && (
-          <>
+          <div role="group" aria-label={`Contents of ${collection.name}`}>
             {filteredRequests.map((request) => (
               <div
                 key={request._id}
-                className="flex items-center gap-2 px-2 py-1 hover:bg-[#333334] rounded cursor-pointer ml-6"
+                role="treeitem"
+                data-tree-id={request._id}
+                aria-label={`${request.method} ${request.name}`}
+                tabIndex={activeTreeItemId === request._id ? 0 : -1}
+                onFocus={() => setActiveTreeItemId(request._id)}
                 onClick={() => onSelectRequest(request, collection._id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onSelectRequest(request, collection._id);
+                  } else {
+                    handleTreeKeyDown(e);
+                  }
+                }}
+                className="flex items-center gap-2 px-2 py-1 hover:bg-[#333334] rounded cursor-pointer ml-6 focus:outline-none focus-visible:bg-[#333334] focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[#ff6b35]"
               >
-                <span className={getMethodClass(request.method)}>{request.method}</span>
+                <span className="http-method w-12 shrink-0" style={getMethodStyle(request.method)}>
+                  {request.method}
+                </span>
                 <span className="flex-1 text-sm truncate">{request.name}</span>
               </div>
             ))}
             {collection.folders.map((folder) => renderFolder(folder, collection))}
-          </>
+          </div>
         )}
       </div>
     );
@@ -345,14 +510,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <Plus className="w-4 h-4" />
         New Collection
       </button>
-      {collections.map((collection) => renderCollection(collection))}
+      {collections.length === 0 ? (
+        <div className="flex flex-col items-center justify-center text-center py-10 px-4 text-gray-500">
+          <FolderOpen className="w-8 h-8 mb-2 text-gray-600" />
+          <p className="text-sm">No collections yet</p>
+        </div>
+      ) : (
+        <div ref={treeRef} role="tree" aria-label="Collections">
+          {collections.map((collection) => renderCollection(collection))}
+        </div>
+      )}
     </div>
   );
 
   const renderHistoryContent = () => (
     <div className="p-2">
       {history.length === 0 ? (
-        <p className="text-center text-gray-500 text-sm py-4">No history yet</p>
+        <div className="flex flex-col items-center justify-center text-center py-10 px-4 text-gray-500">
+          <HistoryIcon className="w-8 h-8 mb-2 text-gray-600" />
+          <p className="text-sm">No history yet</p>
+        </div>
       ) : (
         history.map((request, index) => (
           <div
@@ -361,7 +538,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
             onClick={() => onSelectHistory(request)}
           >
             <Clock className="w-4 h-4 text-gray-500" />
-            <span className={getMethodClass(request.method)}>{request.method}</span>
+            <span className="http-method w-12 shrink-0" style={getMethodStyle(request.method)}>
+              {request.method}
+            </span>
             <span className="flex-1 text-sm truncate">{request.name || request.url || 'Untitled'}</span>
           </div>
         ))
@@ -369,10 +548,38 @@ export const Sidebar: React.FC<SidebarProps> = ({
     </div>
   );
 
+  const handleCreateEnvironment = () => {
+    const newEnv: Environment = {
+      _id: `environment:${crypto.randomUUID()}`,
+      type: 'environment',
+      workspaceId: '',
+      name: 'New Environment',
+      variables: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      isGlobal: false,
+    };
+    useWorkspaceStore.getState().addEnvironment(newEnv);
+  };
+
   const renderEnvironmentsContent = () => (
     <div className="p-2">
+      <div className="flex items-center justify-between px-2 py-1">
+        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Environments</span>
+        <button
+          onClick={handleCreateEnvironment}
+          aria-label="New environment"
+          title="Add Environment"
+          className="p-1 text-gray-400 hover:text-white hover:bg-[#3d3d3d] rounded transition-colors"
+        >
+          <Plus className="w-4 h-4" />
+        </button>
+      </div>
       {environments.length === 0 ? (
-        <p className="text-center text-gray-500 text-sm py-4">No environments</p>
+        <div className="flex flex-col items-center justify-center text-center py-10 px-4 text-gray-500">
+          <Droplet className="w-8 h-8 mb-2 text-gray-600" />
+          <p className="text-sm">No environments</p>
+        </div>
       ) : (
         environments.map((env) => (
           <div
@@ -391,19 +598,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         ))
       )}
       <button
-        onClick={() => {
-          const newEnv: Environment = {
-            _id: `environment:${crypto.randomUUID()}`,
-            type: 'environment',
-            workspaceId: '',
-            name: 'New Environment',
-            variables: [],
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            isGlobal: false,
-          };
-          useWorkspaceStore.getState().addEnvironment(newEnv);
-        }}
+        onClick={handleCreateEnvironment}
         className="flex items-center gap-2 w-full px-2 py-1.5 text-sm text-gray-400 hover:text-white hover:bg-[#333334] rounded transition-colors"
       >
         <Plus className="w-4 h-4" />
@@ -440,6 +635,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="w-12 flex flex-col items-center py-2 border-b border-[#3a3a3b]">
           <button
             onClick={() => onCollapseChange?.(false)}
+            aria-label="Expand sidebar"
             className="p-2 text-gray-400 hover:text-white hover:bg-[#3d3d3d] rounded transition-colors"
             title="Expand sidebar"
           >
@@ -453,6 +649,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id as typeof activeTab)}
+                aria-label={item.label}
                 className={cn(
                   "p-2 mb-1 rounded transition-colors relative",
                   activeTab === item.id
@@ -480,12 +677,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="w-12 flex flex-col border-r border-[#3a3a3b] bg-[#1e1e1e]">
         <button
           onClick={() => onCollapseChange?.(true)}
+          aria-label="Collapse sidebar"
           className="p-2 text-gray-400 hover:text-white hover:bg-[#3d3d3d] rounded transition-colors m-1"
           title="Collapse sidebar"
         >
           <ChevronLeft className="w-5 h-5" />
         </button>
-        
+
         <div className="flex-1 flex flex-col items-center py-2">
           {iconRailItems.map((item) => {
             const Icon = item.icon;
@@ -493,6 +691,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id as typeof activeTab)}
+                aria-label={item.label}
                 className={cn(
                   "p-2 mb-1 rounded transition-colors relative",
                   activeTab === item.id
@@ -509,7 +708,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Content area */}
-      <div className="flex-1 flex flex-col border-r border-[#3a3a3b]">
+      <div className="flex-1 flex flex-col border-r border-[#3a3a3b] relative">
         {/* Header */}
         <div className="flex items-center gap-2 px-2 py-2 border-b border-[#3a3a3b]">
           <div className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5">
@@ -520,11 +719,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Action buttons */}
         <div className="flex items-center gap-2 px-2 py-2 border-b border-[#3a3a3b] relative">
-          <div className="relative flex-1">
+          <div className="relative flex-1" ref={newDropdownRef}>
             <button
+              type="button"
               onClick={() => setShowNewDropdown(!showNewDropdown)}
-              onBlur={() => setTimeout(() => setShowNewDropdown(false), 200)}
+              aria-haspopup="menu"
+              aria-expanded={showNewDropdown}
+              aria-label="Create new request or collection"
               className="w-full flex items-center justify-center gap-1 px-2 py-1.5 text-xs font-medium bg-[#ff6b35] text-white rounded hover:bg-[#e55a2b] transition-colors"
+              title="Create new request or collection"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>New</span>
@@ -605,17 +808,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </div>
             )}
           </div>
-          <label className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-xs font-medium text-gray-300 bg-[#3d3d3d] rounded hover:bg-[#4d4d4d] transition-colors cursor-pointer">
+          <button
+            type="button"
+            onClick={() => importInputRef.current?.click()}
+            disabled={isImporting}
+            aria-label="Import Postman collection"
+            className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-xs font-medium text-gray-300 bg-[#3d3d3d] rounded hover:bg-[#4d4d4d] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-wait"
+            title="Import Postman collection"
+          >
             <Download className="w-3.5 h-3.5" />
-            Import
-            <input
-              type="file"
-              accept=".json"
-              className="hidden"
-              onChange={handleImport}
-              disabled={isImporting}
-            />
-          </label>
+            {isImporting ? 'Importing…' : 'Import'}
+          </button>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept=".json"
+            className="hidden"
+            onChange={handleImport}
+            disabled={isImporting}
+            tabIndex={-1}
+            aria-hidden="true"
+          />
         </div>
 
         {/* Search */}
@@ -627,6 +840,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search..."
+              aria-label="Search collections"
               className="w-full pl-9 pr-3 py-1.5 bg-[#1e1e1e] border border-[#3d3d3d] rounded text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-[#ff6b35]"
             />
           </div>
@@ -637,12 +851,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {renderContent()}
         </div>
 
-        {/* Error toast */}
+        {/* Error toast — anchored inside the content column (relative parent) and
+            raised above the bottom edge so it never covers the resize handle */}
         {importError && (
-          <div className="absolute bottom-4 left-2 right-2 p-3 bg-red-500/20 border border-red-500/30 rounded text-red-400 text-sm">
+          <div
+            role="alert"
+            className="absolute bottom-6 left-2 right-2 z-40 p-3 bg-red-500/20 border border-red-500/30 rounded text-red-400 text-sm"
+          >
             {importError}
-            <button 
+            <button
+              type="button"
               onClick={() => setImportError(null)}
+              aria-label="Dismiss error"
               className="ml-2 text-red-300 hover:text-white"
             >
               ×
@@ -651,11 +871,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
       </div>
 
-      {/* Resize handle */}
-      <div
-        className="w-1 cursor-col-resize hover:bg-[#ff6b35] transition-colors"
-        onMouseDown={handleMouseDown}
-      />
+      {/* Resize handle — visual bar stays w-1, an invisible wider layer
+          captures pointer events for easier targeting */}
+      <div className="group relative w-1 shrink-0" title="Drag to resize sidebar">
+        <div
+          className="w-full h-full transition-colors group-hover:bg-[#ff6b35] pointer-events-none"
+        />
+        <div
+          className="absolute inset-y-0 -left-2 -right-2 z-10 cursor-col-resize"
+          onMouseDown={handleMouseDown}
+          aria-hidden="true"
+        />
+      </div>
 
       {/* New Collection Modal */}
       <Modal

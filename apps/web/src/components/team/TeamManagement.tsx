@@ -8,12 +8,62 @@ import { Select } from '@/components/ui/Select';
 import { apiClient } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
 import { Users, Plus, Trash2, Crown, Shield, User, Mail, X } from 'lucide-react';
+import { isAxiosError } from 'axios';
 import type { Team, TeamMember } from '@apiforge/shared';
 
 interface TeamManagementProps {
   isOpen: boolean;
   onClose: () => void;
 }
+
+type PendingConfirm =
+  | { type: 'delete-team'; teamId: string }
+  | { type: 'remove-member'; userId: string };
+
+interface ConfirmDialogProps {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}
+
+const ConfirmDialog: React.FC<ConfirmDialogProps> = ({ title, message, confirmLabel, onConfirm, onCancel }) => {
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onCancel();
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [onCancel]);
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onCancel} />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className="relative w-full max-w-sm bg-[#262627] border border-[#3d3d3d] rounded-lg shadow-xl p-5"
+      >
+        <h3 className="text-base font-semibold text-gray-200">{title}</h3>
+        <p className="mt-2 text-sm text-gray-400">{message}</p>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="secondary" onClick={onCancel}>
+            Cancel
+          </Button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="px-4 py-2 text-sm font-medium rounded-md transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-[#1e1e1e] bg-red-600 text-white hover:bg-red-700 focus:ring-red-600"
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export const TeamManagement: React.FC<TeamManagementProps> = ({ isOpen, onClose }) => {
   const { user } = useAuthStore();
@@ -25,6 +75,8 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({ isOpen, onClose 
   const [newTeamName, setNewTeamName] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<'admin' | 'member'>('member');
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -66,8 +118,6 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({ isOpen, onClose 
   };
 
   const handleDeleteTeam = async (teamId: string) => {
-    if (!confirm('Are you sure you want to delete this team?')) return;
-    
     try {
       await apiClient.delete(`/api/teams/${teamId}`);
       const newTeams = teams.filter((t) => t._id !== teamId);
@@ -81,27 +131,38 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({ isOpen, onClose 
   };
 
   const handleInviteMember = async () => {
-    if (!inviteEmail.trim() || !selectedTeam) return;
-    
+    const email = inviteEmail.trim().toLowerCase();
+    if (!email || !selectedTeam) return;
+
+    if (selectedTeam.members.some((m) => m.email.toLowerCase() === email)) {
+      setInviteError('This user is already a member of the team');
+      return;
+    }
+
     try {
       const response = await apiClient.post<Team>(`/api/teams/${selectedTeam._id}/members`, {
-        email: inviteEmail,
+        email,
         role: inviteRole,
       });
       if (response.success && response.data) {
         setSelectedTeam(response.data);
         setTeams(teams.map((t) => t._id === response.data!._id ? response.data! : t));
         setInviteEmail('');
+        setInviteError(null);
         setShowInviteModal(false);
       }
     } catch (error) {
-      console.error('Failed to invite member:', error);
+      if (isAxiosError(error)) {
+        setInviteError(error.response?.data?.error || 'Failed to invite member');
+      } else {
+        setInviteError('Failed to invite member');
+      }
     }
   };
 
   const handleRemoveMember = async (userId: string) => {
-    if (!selectedTeam || !confirm('Remove this member from the team?')) return;
-    
+    if (!selectedTeam) return;
+
     try {
       const response = await apiClient.delete<Team>(`/api/teams/${selectedTeam._id}/members/${userId}`);
       if (response.success && response.data) {
@@ -130,8 +191,39 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({ isOpen, onClose 
   const isOwner = selectedTeam?.ownerId === user?._id;
   const isMember = selectedTeam?.members.some((m) => m.userId === user?._id);
 
+  const closeAll = () => {
+    setShowCreateModal(false);
+    setShowInviteModal(false);
+    setPendingConfirm(null);
+    onClose();
+  };
+
+  const handleConfirmPending = () => {
+    const pending = pendingConfirm;
+    setPendingConfirm(null);
+    if (!pending) return;
+    if (pending.type === 'delete-team') {
+      void handleDeleteTeam(pending.teamId);
+    } else {
+      void handleRemoveMember(pending.userId);
+    }
+  };
+
+  const memberToRemove =
+    pendingConfirm?.type === 'remove-member'
+      ? selectedTeam?.members.find((m) => m.userId === pendingConfirm.userId)
+      : null;
+
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Team Management" size="xl">
+    <>
+      <Modal
+        isOpen={isOpen && !showCreateModal && !showInviteModal}
+        onClose={() => {
+          if (!pendingConfirm) closeAll();
+        }}
+        title="Team Management"
+        size="xl"
+      >
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
@@ -151,7 +243,7 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({ isOpen, onClose 
           </div>
           
           {selectedTeam && isOwner && (
-            <Button variant="danger" size="sm" onClick={() => handleDeleteTeam(selectedTeam._id)}>
+            <Button variant="danger" size="sm" onClick={() => setPendingConfirm({ type: 'delete-team', teamId: selectedTeam._id })}>
               <Trash2 className="w-4 h-4 mr-1" />
               Delete Team
             </Button>
@@ -205,7 +297,7 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({ isOpen, onClose 
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => handleRemoveMember(member.userId)}
+                            onClick={() => setPendingConfirm({ type: 'remove-member', userId: member.userId })}
                           >
                             <X className="w-4 h-4" />
                           </Button>
@@ -222,7 +314,7 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({ isOpen, onClose 
               </div>
 
               {(isOwner || selectedTeam.members.find((m) => m.userId === user?._id && m.role === 'admin')) && (
-                <Button variant="secondary" size="sm" onClick={() => setShowInviteModal(true)}>
+                <Button variant="secondary" size="sm" onClick={() => { setInviteError(null); setShowInviteModal(true); }}>
                   <Plus className="w-4 h-4 mr-1" />
                   Invite Member
                 </Button>
@@ -257,8 +349,9 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({ isOpen, onClose 
           </div>
         )}
       </div>
+      </Modal>
 
-      <Modal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} title="Create New Team">
+      <Modal isOpen={isOpen && showCreateModal} onClose={() => setShowCreateModal(false)} title="Create New Team">
         <div className="space-y-4">
           <Input
             label="Team Name"
@@ -274,14 +367,18 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({ isOpen, onClose 
         </div>
       </Modal>
 
-      <Modal isOpen={showInviteModal} onClose={() => setShowInviteModal(false)} title="Invite Team Member">
+      <Modal isOpen={isOpen && showInviteModal} onClose={() => setShowInviteModal(false)} title="Invite Team Member">
         <div className="space-y-4">
           <Input
             label="Email Address"
             type="email"
             value={inviteEmail}
-            onChange={(e) => setInviteEmail(e.target.value)}
+            onChange={(e) => {
+              setInviteEmail(e.target.value);
+              setInviteError(null);
+            }}
             placeholder="colleague@example.com"
+            error={inviteError || undefined}
             autoFocus
           />
           <Select
@@ -299,6 +396,26 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({ isOpen, onClose 
           </div>
         </div>
       </Modal>
-    </Modal>
+
+      {pendingConfirm?.type === 'delete-team' && selectedTeam && (
+        <ConfirmDialog
+          title="Delete Team"
+          message={`Are you sure you want to delete "${selectedTeam.name}"? All members will lose access. This cannot be undone.`}
+          confirmLabel="Delete Team"
+          onConfirm={handleConfirmPending}
+          onCancel={() => setPendingConfirm(null)}
+        />
+      )}
+
+      {pendingConfirm?.type === 'remove-member' && memberToRemove && selectedTeam && (
+        <ConfirmDialog
+          title="Remove Member"
+          message={`Are you sure you want to remove ${memberToRemove.name} (${memberToRemove.email}) from "${selectedTeam.name}"?`}
+          confirmLabel="Remove Member"
+          onConfirm={handleConfirmPending}
+          onCancel={() => setPendingConfirm(null)}
+        />
+      )}
+    </>
   );
 };

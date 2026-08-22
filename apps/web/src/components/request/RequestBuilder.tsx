@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { cn } from '@/lib/utils';
 import { useCollectionsStore } from '@/stores/collectionsStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -11,8 +11,8 @@ import { Button } from '../ui/Button';
 import { KeyValueEditor } from '../ui/KeyValueEditor';
 import { Send, Code, Loader2, Settings, ChevronRight, Save, MoreHorizontal, ChevronDown, Download, X } from 'lucide-react';
 import type { ApiRequest, HttpMethod, RequestBodyMode, RequestBody, AuthConfig, AuthType, RawBodyType, Variable } from '@apiforge/shared';
+import { HTTP_METHOD_COLORS } from '@/lib/methodColors';
 import { CodeGenModal } from './CodeGenModal';
-import { Dropdown } from '../ui/Dropdown';
 import { VariableHighlighter } from '../environment/VariableTooltip';
 
 const HTTP_METHODS: { value: HttpMethod; label: string }[] = [
@@ -63,11 +63,17 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
   isLoading,
 }) => {
   const [showSendDropdown, setShowSendDropdown] = useState(false);
+  const [showSaveMenu, setShowSaveMenu] = useState(false);
   const [activeTab, setActiveTab] = useState('params');
   const [scriptSubTab, setScriptSubTab] = useState<'pre-request' | 'post-request'>('pre-request');
   const [showCodeGen, setShowCodeGen] = useState(false);
   const [isEditingName, setIsEditingName] = useState(false);
   const [editableName, setEditableName] = useState(request?.name || '');
+  const [hideUrlVarSuggestions, setHideUrlVarSuggestions] = useState(false);
+  const [activeUrlVarIndex, setActiveUrlVarIndex] = useState(0);
+  const [rawJsonError, setRawJsonError] = useState<string | null>(null);
+  const saveMenuRef = useRef<HTMLDivElement>(null);
+  const sendControlsRef = useRef<HTMLDivElement>(null);
   const { getInterpolatedValue, currentEnvironment, globalVariables } = useWorkspaceStore();
   const { getCollectionAndFolderForRequest } = useCollectionsStore();
 
@@ -76,6 +82,17 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
       setEditableName(request.name);
     }
   }, [request?._id, request?.name]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (saveMenuRef.current && !saveMenuRef.current.contains(target)) setShowSaveMenu(false);
+      if (sendControlsRef.current && !sendControlsRef.current.contains(target)) setShowSendDropdown(false);
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const { collection, folder } = request ? getCollectionAndFolderForRequest(request._id) : { collection: null, folder: null };
 
@@ -135,6 +152,29 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
     return vars;
   };
 
+  const urlVariableMatch = hideUrlVarSuggestions ? null : /{{([^{}]*)$/.exec(request.url);
+  const urlVariableSuggestions = urlVariableMatch
+    ? getVariablesForHighlighter()
+        .filter(v => v.key.toLowerCase().includes(urlVariableMatch[1].toLowerCase()))
+        .slice(0, 6)
+    : [];
+
+  const insertUrlVariable = (variableKey: string) => {
+    handleChange('url', request.url.replace(/{{([^{}]*)$/, `{{${variableKey}}}`));
+    setHideUrlVarSuggestions(false);
+    setActiveUrlVarIndex(0);
+  };
+
+  const handlePrettifyJson = () => {
+    try {
+      const parsed = JSON.parse(request.body.raw || '');
+      handleBodyContentChange({ raw: JSON.stringify(parsed, null, 2) });
+      setRawJsonError(null);
+    } catch {
+      setRawJsonError('Invalid JSON');
+    }
+  };
+
   return (
     <div className="flex flex-col h-full">
       {/* Breadcrumb and save */}
@@ -190,19 +230,41 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
           )}
         </div>
         <div className="ml-auto flex items-center gap-1">
-          <Dropdown
-            trigger={
-              <Button variant="secondary" size="sm" className="gap-1">
-                <Save className="w-3.5 h-3.5" />
-                Save
-              </Button>
-            }
-            items={[
-              { id: 'save', label: 'Save' },
-              { id: 'saveAs', label: 'Save As' },
-              { id: 'saveExample', label: 'Save as Example' },
-            ]}
-          />
+          <div className="relative" ref={saveMenuRef}>
+            <Button
+              variant="secondary"
+              size="sm"
+              className="gap-1"
+              aria-haspopup="menu"
+              aria-expanded={showSaveMenu}
+              aria-label="Save request options"
+              onClick={() => setShowSaveMenu((prev) => !prev)}
+            >
+              <Save className="w-3.5 h-3.5" />
+              Save
+            </Button>
+            {showSaveMenu && (
+              <div
+                role="menu"
+                className="absolute z-50 mt-1 py-1 bg-[#2d2d2d] border border-[#3d3d3d] rounded-md shadow-lg min-w-[160px] right-0"
+              >
+                {[
+                  { id: 'save', label: 'Save' },
+                  { id: 'saveAs', label: 'Save As' },
+                  { id: 'saveExample', label: 'Save as Example' },
+                ].map((item) => (
+                  <button
+                    key={item.id}
+                    role="menuitem"
+                    onClick={() => setShowSaveMenu(false)}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors text-gray-300 hover:bg-[#3d3d3d] hover:text-gray-100"
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <Button variant="ghost" size="sm" className="p-1">
             <MoreHorizontal className="w-4 h-4" />
           </Button>
@@ -217,18 +279,12 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
           className={cn(
             'px-2 py-1.5 bg-[#2d2d2d] border border-[#3d3d3d] rounded-md font-bold text-sm cursor-pointer',
             'focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent',
-            'transition-colors duration-200 appearance-none min-w-[80px]',
-            request.method === 'GET' && 'text-green-400',
-            request.method === 'POST' && 'text-orange-400',
-            request.method === 'PUT' && 'text-blue-400',
-            request.method === 'PATCH' && 'text-yellow-400',
-            request.method === 'DELETE' && 'text-red-400',
-            ['HEAD', 'OPTIONS'].includes(request.method) && 'text-gray-400'
+            'transition-colors duration-200 appearance-none min-w-[90px]'
           )}
-          style={{ width: '90px' }}
+          style={{ color: HTTP_METHOD_COLORS[request.method] }}
         >
           {HTTP_METHODS.map((m) => (
-            <option key={m.value} value={m.value} className={cn('font-bold', `http-method.${m.value.toLowerCase()}`)}>
+            <option key={m.value} value={m.value} className="font-bold" style={{ color: HTTP_METHOD_COLORS[m.value] }}>
               {m.label}
             </option>
           ))}
@@ -237,11 +293,56 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
         <div className="flex-1 relative">
           <Input
             value={request.url}
-            onChange={(e) => handleChange('url', e.target.value)}
+            onChange={(e) => {
+              handleChange('url', e.target.value);
+              setHideUrlVarSuggestions(false);
+              setActiveUrlVarIndex(0);
+            }}
+            onKeyDown={(e) => {
+              if (!urlVariableMatch || urlVariableSuggestions.length === 0) return;
+              if (e.key === 'Escape') {
+                setHideUrlVarSuggestions(true);
+              } else if (e.key === 'Enter') {
+                e.preventDefault();
+                insertUrlVariable(
+                  urlVariableSuggestions[Math.min(activeUrlVarIndex, urlVariableSuggestions.length - 1)].key
+                );
+              } else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setActiveUrlVarIndex((i) => Math.min(i + 1, urlVariableSuggestions.length - 1));
+              } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setActiveUrlVarIndex((i) => Math.max(i - 1, 0));
+              }
+            }}
             placeholder="Enter request URL"
             className="font-mono text-sm w-full"
+            aria-autocomplete="list"
           />
-          {request.url.includes('{{') && (
+          {urlVariableMatch && urlVariableSuggestions.length > 0 && (
+            <div
+              role="listbox"
+              className="absolute top-full left-0 mt-1 w-64 bg-[#2d2d2e] border border-[#3d3d3d] rounded-lg shadow-xl z-50 py-1"
+            >
+              {urlVariableSuggestions.map((v, i) => (
+                <button
+                  key={`${v.scope}:${v.key}`}
+                  role="option"
+                  aria-selected={i === activeUrlVarIndex}
+                  onMouseEnter={() => setActiveUrlVarIndex(i)}
+                  onClick={() => insertUrlVariable(v.key)}
+                  className={cn(
+                    'w-full px-3 py-2 text-left text-sm text-gray-200 flex items-center justify-between transition-colors',
+                    i === activeUrlVarIndex && 'bg-[#3d3d3d]'
+                  )}
+                >
+                  <span className="font-mono text-[#ff6b35]">{`{{${v.key}}}`}</span>
+                  <span className="text-xs text-gray-500 truncate ml-2">{v.value}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          {request.url.includes('{{') && !urlVariableMatch && (
             <div className="absolute left-0 top-full mt-1 w-full">
               <VariableHighlighter
                 text={request.url}
@@ -251,7 +352,7 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
           )}
         </div>
         
-        <div className="relative">
+        <div className="relative" ref={sendControlsRef}>
           {isLoading ? (
             <Button onClick={onCancel} variant="danger" className="gap-1">
               <X className="w-4 h-4" />
@@ -259,30 +360,37 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
             </Button>
           ) : (
             <>
-              <Button 
-                onClick={() => {
-                  if (showSendDropdown && onSendAndDownload) {
+              <div className="flex">
+                <Button
+                  onClick={() => {
                     setShowSendDropdown(false);
-                    onSendAndDownload();
-                  } else {
                     onSend();
-                  }
-                }} 
-                disabled={!request.url.trim()}
-                className="gap-1"
-              >
-                <Send className="w-4 h-4" />
-                Send
+                  }}
+                  disabled={!request.url.trim()}
+                  aria-label="Send request"
+                  className="gap-1 rounded-r-none"
+                >
+                  <Send className="w-4 h-4" />
+                  Send
+                </Button>
                 {onSendAndDownload && (
-                  <>
-                    <span className="mx-1">|</span>
-                    <ChevronDown className="w-3 h-3" />
-                  </>
-                )}
-              </Button>
-              {onSendAndDownload && showSendDropdown && (
-                <div className="absolute top-full left-0 mt-1 w-48 bg-[#2d2d2e] border border-[#3d3d3d] rounded-lg shadow-xl z-50">
                   <button
+                    type="button"
+                    onClick={() => setShowSendDropdown((prev) => !prev)}
+                    disabled={!request.url.trim()}
+                    aria-label="More send options"
+                    aria-haspopup="menu"
+                    aria-expanded={showSendDropdown}
+                    className="inline-flex items-center justify-center px-2 bg-[#ff6b35] hover:bg-[#e55a2b] text-white font-medium rounded-r-md border-l border-black/20 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#ff6b35] focus:ring-offset-[#1e1e1e] transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <ChevronDown className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+              {onSendAndDownload && showSendDropdown && (
+                <div role="menu" className="absolute top-full right-0 mt-1 w-48 bg-[#2d2d2e] border border-[#3d3d3d] rounded-lg shadow-xl z-50">
+                  <button
+                    role="menuitem"
                     onClick={() => {
                       setShowSendDropdown(false);
                       onSend();
@@ -293,6 +401,7 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
                     Send
                   </button>
                   <button
+                    role="menuitem"
                     onClick={() => {
                       setShowSendDropdown(false);
                       onSendAndDownload();
@@ -303,15 +412,6 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
                     Send and Download
                   </button>
                 </div>
-              )}
-              {onSendAndDownload && !showSendDropdown && (
-                <button
-                  onClick={() => setShowSendDropdown(true)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-gray-400 hover:text-white transition-colors"
-                  onBlur={() => setShowSendDropdown(false)}
-                >
-                  <ChevronDown className="w-3 h-3" />
-                </button>
               )}
             </>
           )}
@@ -378,20 +478,35 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
 
             {request.body.mode === 'raw' && (
               <div className="space-y-2">
-                <Select
-                  value={request.body.rawType || 'json'}
-                  onChange={(e) => handleBodyContentChange({ rawType: e.target.value as RawBodyType })}
-                  options={[
-                    { value: 'json', label: 'JSON' },
-                    { value: 'xml', label: 'XML' },
-                    { value: 'html', label: 'HTML' },
-                    { value: 'text', label: 'Text' },
-                  ]}
-                  className="w-32"
-                />
+                <div className="flex items-center gap-2">
+                  <Select
+                    value={request.body.rawType || 'json'}
+                    onChange={(e) => handleBodyContentChange({ rawType: e.target.value as RawBodyType })}
+                    options={[
+                      { value: 'json', label: 'JSON' },
+                      { value: 'xml', label: 'XML' },
+                      { value: 'html', label: 'HTML' },
+                      { value: 'text', label: 'Text' },
+                    ]}
+                    className="w-32"
+                  />
+                  {(request.body.rawType || 'json') === 'json' && (
+                    <Button variant="secondary" size="sm" onClick={handlePrettifyJson}>
+                      Prettify
+                    </Button>
+                  )}
+                </div>
+                {rawJsonError && (
+                  <p role="alert" className="text-xs text-[#f44336]">
+                    {rawJsonError}
+                  </p>
+                )}
                 <textarea
                   value={request.body.raw || ''}
-                  onChange={(e) => handleBodyContentChange({ raw: e.target.value })}
+                  onChange={(e) => {
+                    handleBodyContentChange({ raw: e.target.value });
+                    setRawJsonError(null);
+                  }}
                   placeholder="Enter request body"
                   className="w-full h-64 p-3 bg-[#1e1e1e] border border-[#3d3d3d] rounded-md font-mono text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-[#ff6b35] resize-none"
                 />

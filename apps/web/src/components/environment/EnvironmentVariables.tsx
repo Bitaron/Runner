@@ -64,8 +64,10 @@ export const EnvironmentVariables: React.FC<EnvironmentVariablesProps> = ({
   };
 
   const handleSave = () => {
-    onUpdate({ variables: localVariables });
-    setVariables([...localVariables]);
+    const savedVariables = localVariables.filter((v) => v.key.trim() !== '');
+    onUpdate({ variables: savedVariables });
+    setVariables([...savedVariables]);
+    setLocalVariables(savedVariables);
     setHasChanges(false);
   };
 

@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { ChevronRight, Eye, Pencil, Copy, Trash2, Share2, MoreVertical, Check } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { EnvironmentVariables } from './EnvironmentVariables';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { Environment, Variable } from '@apiforge/shared';
 
 interface EnvironmentPanelProps {
@@ -25,17 +26,37 @@ export const EnvironmentPanel: React.FC<EnvironmentPanelProps> = ({
   onDelete,
   onDuplicate,
 }) => {
+  const { currentEnvironment, setCurrentEnvironment } = useWorkspaceStore();
   const [isEditingName, setIsEditingName] = useState(false);
   const [name, setName] = useState(environment.name);
-  const [isActive, setIsActive] = useState(false);
+  const [justDuplicated, setJustDuplicated] = useState(false);
+  const headerRef = useRef<HTMLDivElement>(null);
+  const duplicateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const isActive = !isGlobals && currentEnvironment?._id === environment._id;
+
+  useEffect(() => {
+    return () => {
+      if (duplicateTimeoutRef.current) clearTimeout(duplicateTimeoutRef.current);
+    };
+  }, []);
 
   const handleNameSave = () => {
     onUpdate({ name });
     setIsEditingName(false);
   };
 
+  const handleDuplicate = () => {
+    if (isGlobals) return;
+    onDuplicate();
+    setJustDuplicated(true);
+    headerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    if (duplicateTimeoutRef.current) clearTimeout(duplicateTimeoutRef.current);
+    duplicateTimeoutRef.current = setTimeout(() => setJustDuplicated(false), 2000);
+  };
+
   return (
-    <div className="flex flex-col h-full bg-[#1e1e1e]">
+    <div className="flex flex-col h-full w-full max-w-[500px] sm:w-[320px] md:w-[380px] lg:w-[500px] bg-[#1e1e1e]">
       {/* Header */}
       <div className="flex items-center gap-2 px-4 py-3 border-b border-[#3d3d3d]">
         <button onClick={onClose} className="text-gray-400 hover:text-white">
@@ -57,7 +78,13 @@ export const EnvironmentPanel: React.FC<EnvironmentPanelProps> = ({
       {!isGlobals ? (
         <>
           {/* Environment Name Header */}
-          <div className="px-4 py-3 border-b border-[#3d3d3d]">
+          <div
+            ref={headerRef}
+            className={cn(
+              'relative px-4 py-3 border-b border-[#3d3d3d] transition-colors',
+              justDuplicated && 'bg-[#ff6b35]/10'
+            )}
+          >
             <div className="flex items-center justify-between">
               <div className="flex-1">
                 {isEditingName ? (
@@ -83,7 +110,7 @@ export const EnvironmentPanel: React.FC<EnvironmentPanelProps> = ({
                 <Button variant="ghost" size="sm" title="Share">
                   <Share2 className="w-4 h-4" />
                 </Button>
-                <Button variant="ghost" size="sm" title="Duplicate" onClick={onDuplicate}>
+                <Button variant="ghost" size="sm" title="Duplicate" onClick={handleDuplicate}>
                   <Copy className="w-4 h-4" />
                 </Button>
                 <Button variant="ghost" size="sm" title="Delete" onClick={onDelete}>
@@ -98,7 +125,7 @@ export const EnvironmentPanel: React.FC<EnvironmentPanelProps> = ({
             {/* Active toggle */}
             <div className="mt-3 flex items-center gap-2">
               <button
-                onClick={() => setIsActive(!isActive)}
+                onClick={() => setCurrentEnvironment(isActive ? null : environment)}
                 className={cn(
                   'flex items-center gap-2 px-3 py-1.5 rounded text-sm transition-colors',
                   isActive 
@@ -110,6 +137,13 @@ export const EnvironmentPanel: React.FC<EnvironmentPanelProps> = ({
                 Set as active environment
               </button>
             </div>
+
+            {justDuplicated && (
+              <div className="absolute top-3 right-4 flex items-center gap-1 px-2 py-1 rounded bg-[#ff6b35] text-white text-xs font-medium shadow-lg pointer-events-none">
+                <Check className="w-3 h-3" />
+                Duplicated
+              </div>
+            )}
           </div>
 
           {/* Variables */}
