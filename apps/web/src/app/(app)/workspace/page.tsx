@@ -21,6 +21,7 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAuthStore } from '@/stores/authStore';
 import { apiClient } from '@/lib/api';
 import { syncManager } from '@/lib/syncManager';
+import { canSyncToServer, createRequestOnServer, createFolderOnServer } from '@/lib/persistence';
 import { cn } from '@/lib/utils';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import type { ApiRequest, Collection, Response, Workspace, Folder, Environment } from '@apiforge/shared';
@@ -124,10 +125,27 @@ export default function WorkspacePage() {
         if (!workspacesLoadedRef.current) {
           const workspacesRes = await apiClient.get<Workspace[]>('/api/workspaces');
           if (!cancelled && workspacesRes.success && workspacesRes.data) {
-            setWorkspaces(workspacesRes.data);
+            let workspaceList = workspacesRes.data;
+
+            // New/legacy users have no workspace; everything (collections,
+            // requests, sync) is workspace-scoped, so provision one.
+            if (workspaceList.length === 0) {
+              try {
+                const created = await apiClient.post<Workspace>('/api/workspaces', {
+                  name: 'Personal Workspace',
+                });
+                if (created.success && created.data) {
+                  workspaceList = [created.data];
+                }
+              } catch {
+                // fall through with the empty list; local-only mode still works
+              }
+            }
+
+            setWorkspaces(workspaceList);
             const current = useWorkspaceStore.getState().currentWorkspace;
-            if ((!current || !workspacesRes.data.some((w) => w._id === current._id)) && workspacesRes.data.length > 0) {
-              setCurrentWorkspace(workspacesRes.data[0]);
+            if ((!current || !workspaceList.some((w) => w._id === current._id)) && workspaceList.length > 0) {
+              setCurrentWorkspace(workspaceList[0]);
             }
             workspacesLoadedRef.current = true;
           }
@@ -151,7 +169,10 @@ export default function WorkspacePage() {
 
   useEffect(() => {
     if (user && tokens?.accessToken && currentWorkspace && !isAnonymous) {
-      const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:4000/ws';
+      // The sync server listens on the /ws path; normalize env config that
+      // omits it (e.g. NEXT_PUBLIC_WS_URL=ws://localhost:4000).
+      const rawUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:4000/ws';
+      const wsUrl = /\/ws\/?$/.test(rawUrl) ? rawUrl : `${rawUrl.replace(/\/$/, '')}/ws`;
       syncManager.connect(wsUrl, tokens.accessToken, user._id, currentWorkspace._id);
     }
 
@@ -233,21 +254,35 @@ export default function WorkspacePage() {
   }, []);
 
 
-  const handleNewRequest = useCallback(() => {
+  const handleNewRequest = useCallback(async (overrides?: Partial<ApiRequest>) => {
     const userId = user?._id || 'anonymous';
     const workspaceId = currentWorkspace?._id || 'default';
-    const newReq = createNewRequest(workspaceId, userId);
-    
+    let newReq = createNewRequest(workspaceId, userId);
+
     // If a collection is selected, add the request to it
     if (selectedCollection) {
-      const updatedRequests = [...selectedCollection.requests, newReq];
+      newReq = { ...newReq, collectionId: selectedCollection._id };
+    }
+    if (overrides) {
+      newReq = { ...newReq, ...overrides };
+    }
+
+    let finalRequest = newReq;
+    if (selectedCollection) {
+      const saved = await createRequestOnServer(newReq);
+      if (saved) {
+        finalRequest = saved;
+      } else if (canSyncToServer()) {
+        toast.error('Request saved locally only — could not reach server');
+      }
+      const updatedRequests = [...selectedCollection.requests, finalRequest];
       useCollectionsStore.getState().updateCollection(selectedCollection._id, { requests: updatedRequests });
     }
-    
+
     const newTab: RequestTab = {
       id: uuidv4(),
       type: 'request',
-      request: newReq,
+      request: finalRequest,
     };
     setTabs(prev => [...prev, newTab]);
     setActiveTabId(newTab.id);
@@ -262,16 +297,9 @@ export default function WorkspacePage() {
     if (type === 'http') {
       handleNewRequest();
     } else if (type === 'graphql') {
-      handleNewRequest();
-      const newReq = createNewRequest(currentWorkspace?._id || 'default', user?._id || 'anonymous');
-      newReq.method = 'POST';
-      newReq.body = { mode: 'graphql', graphql: { query: '', variables: '' } };
-      setTabs(prev => {
-        const lastTab = prev[prev.length - 1];
-        if (lastTab && lastTab.type === 'request') {
-          return [...prev.slice(0, -1), { ...lastTab, request: newReq }];
-        }
-        return prev;
+      handleNewRequest({
+        method: 'POST',
+        body: { mode: 'graphql', graphql: { query: '', variables: '' } },
       });
     } else if (type === 'websocket') {
       setActivePanel('websocket');
@@ -280,18 +308,28 @@ export default function WorkspacePage() {
       // This is handled by the modal in Sidebar
     } else if (type === 'folder') {
       if (selectedCollection) {
-        const newFolder: Folder = {
-          _id: uuidv4(),
-          name: 'New Folder',
-          requests: [],
-          folders: [],
-          variables: [],
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-        const updatedFolders = [...selectedCollection.folders, newFolder];
-        useCollectionsStore.getState().updateCollection(selectedCollection._id, { folders: updatedFolders });
-        toast.success('New folder created');
+        void (async () => {
+          const serverCollection = await createFolderOnServer(selectedCollection._id, 'New Folder');
+          if (serverCollection) {
+            useCollectionsStore.getState().updateCollection(selectedCollection._id, {
+              folders: serverCollection.folders,
+            });
+          } else {
+            const newFolder: Folder = {
+              _id: uuidv4(),
+              name: 'New Folder',
+              requests: [],
+              folders: [],
+              variables: [],
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            };
+            const updatedFolders = [...selectedCollection.folders, newFolder];
+            useCollectionsStore.getState().updateCollection(selectedCollection._id, { folders: updatedFolders });
+            toast.error('Folder saved locally only — could not reach server');
+          }
+          toast.success('New folder created');
+        })();
       } else {
         toast.error('Select a collection first');
       }
@@ -548,10 +586,29 @@ export default function WorkspacePage() {
       }
     }
 
+    // Auto-set Content-Type for body modes that imply one (Postman-like
+    // behavior); an explicit header from the user always wins.
+    const impliedContentTypes: Record<string, string> = {
+      raw: effectiveRequest.body.rawType === 'json' ? 'application/json' : '',
+      urlencoded: 'application/x-www-form-urlencoded',
+    };
+    const bodyContentType = effectiveRequest.body.mode === 'raw'
+      ? (impliedContentTypes.raw || (effectiveRequest.body.rawType === 'xml' ? 'application/xml' : effectiveRequest.body.rawType === 'html' ? 'text/html' : 'text/plain'))
+      : impliedContentTypes[effectiveRequest.body.mode] || '';
+
+    const explicitHeaders = effectiveRequest.headers.filter((h) => !h.disabled);
+    const headers = [...explicitHeaders, ...Object.entries(authHeaders).map(([key, value]) => ({ key, value }))];
+    if (
+      bodyContentType &&
+      !explicitHeaders.some((h) => h.key.trim().toLowerCase() === 'content-type')
+    ) {
+      headers.push({ key: 'Content-Type', value: bodyContentType });
+    }
+
     const payload = {
       method: effectiveRequest.method,
       url: effectiveRequest.url,
-      headers: [...effectiveRequest.headers.filter((h) => !h.disabled), ...Object.entries(authHeaders).map(([key, value]) => ({ key, value }))],
+      headers,
       params: effectiveRequest.params.filter((p) => !p.disabled),
       body: effectiveRequest.body,
       timeout: 30000,

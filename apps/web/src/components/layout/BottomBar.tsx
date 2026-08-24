@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   Wifi, 
   WifiOff, 
@@ -30,7 +30,14 @@ export const BottomBar: React.FC<BottomBarProps> = ({
   onHelpOpen,
   onConsoleOpen,
 }) => {
-  const isConnected = syncManager.isConnected;
+  // Subscribe reactively; reading syncManager.isConnected during render
+  // alone never re-renders when the socket opens/closes.
+  const [isConnected, setIsConnected] = useState(syncManager.isConnected);
+
+  useEffect(
+    () => syncManager.onConnectionChange(setIsConnected),
+    []
+  );
 
   return (
     <div className="flex items-center justify-between h-8 px-3 bg-[#262627] border-t border-[#3d3d3d]">

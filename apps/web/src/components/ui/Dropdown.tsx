@@ -1,8 +1,7 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { cn } from '@/lib/utils';
-import { ChevronDown } from 'lucide-react';
 
 interface DropdownItem {
   id: string;
@@ -28,8 +27,11 @@ export const Dropdown: React.FC<DropdownProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (!isOpen) return undefined;
+
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsOpen(false);
@@ -38,19 +40,84 @@ export const Dropdown: React.FC<DropdownProps> = ({
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isOpen]);
+
+  // Move focus to the first item when the menu opens.
+  useEffect(() => {
+    if (isOpen) {
+      menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+    }
+  }, [isOpen]);
+
+  const closeAndRefocusTrigger = useCallback(() => {
+    setIsOpen(false);
+    dropdownRef.current?.querySelector<HTMLElement>('[data-dropdown-trigger]')?.focus();
   }, []);
+
+  const handleMenuKeyDown = (e: React.KeyboardEvent) => {
+    switch (e.key) {
+      case 'Escape':
+        e.preventDefault();
+        e.stopPropagation();
+        closeAndRefocusTrigger();
+        break;
+      case 'ArrowDown': {
+        e.preventDefault();
+        const menuItems = Array.from(menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? []);
+        const currentIndex = menuItems.indexOf(document.activeElement as HTMLElement);
+        menuItems[(currentIndex + 1) % menuItems.length]?.focus();
+        break;
+      }
+      case 'ArrowUp': {
+        e.preventDefault();
+        const menuItems = Array.from(menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? []);
+        const currentIndex = menuItems.indexOf(document.activeElement as HTMLElement);
+        menuItems[(currentIndex - 1 + menuItems.length) % menuItems.length]?.focus();
+        break;
+      }
+      case 'Home':
+        e.preventDefault();
+        menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+        break;
+      case 'End':
+        e.preventDefault();
+        menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]')[items.length - 1]?.focus();
+        break;
+    }
+  };
 
   const handleItemClick = (item: DropdownItem) => {
     if (item.disabled) return;
     item.onClick?.();
-    setIsOpen(false);
+    closeAndRefocusTrigger();
   };
 
   return (
     <div ref={dropdownRef} className={cn('relative', className)}>
-      <div onClick={() => setIsOpen(!isOpen)}>{trigger}</div>
+      <div
+        data-dropdown-trigger
+        role="button"
+        tabIndex={0}
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
+        onClick={() => setIsOpen(!isOpen)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setIsOpen((prev) => !prev);
+          } else if (e.key === 'ArrowDown' && !isOpen) {
+            e.preventDefault();
+            setIsOpen(true);
+          }
+        }}
+      >
+        {trigger}
+      </div>
       {isOpen && (
         <div
+          ref={menuRef}
+          role="menu"
+          onKeyDown={handleMenuKeyDown}
           className={cn(
             'absolute z-50 mt-1 py-1 bg-[#2d2d2d] border border-[#3d3d3d] rounded-md shadow-lg min-w-[160px]',
             align === 'left' ? 'left-0' : 'right-0'
@@ -59,6 +126,8 @@ export const Dropdown: React.FC<DropdownProps> = ({
           {items.map((item) => (
             <button
               key={item.id}
+              role="menuitem"
+              aria-disabled={item.disabled || undefined}
               onClick={() => handleItemClick(item)}
               disabled={item.disabled}
               className={cn(

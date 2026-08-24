@@ -67,7 +67,7 @@ export const TopBar: React.FC<TopBarProps> = ({
       {/* Top navigation bar */}
       <div className="flex items-center justify-between h-10 px-2 bg-[#262627] border-b border-[#3d3d3d]">
         {/* Left section */}
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 shrink-0">
           <button
             aria-label="Open menu"
             className="p-2 text-gray-400 hover:text-white hover:bg-[#3d3d3d] rounded transition-colors"
@@ -88,14 +88,14 @@ export const TopBar: React.FC<TopBarProps> = ({
               <ChevronRight className="w-4 h-4" aria-hidden="true" />
             </button>
           </div>
-          <button className="flex items-center gap-1 px-2 py-1 text-sm text-gray-400 hover:text-white hover:bg-[#3d3d3d] rounded transition-colors">
+          <button className="hidden items-center gap-1 px-2 py-1 text-sm whitespace-nowrap text-gray-400 hover:text-white hover:bg-[#3d3d3d] rounded transition-colors md:flex">
             <Home className="w-4 h-4" />
             <span>Home</span>
           </button>
           <div className="relative">
             <button 
               onClick={() => setShowWorkspaces(!showWorkspaces)}
-              className="flex items-center gap-1 px-2 py-1 text-sm text-gray-400 hover:text-white hover:bg-[#3d3d3d] rounded transition-colors"
+              className="flex items-center gap-1 px-2 py-1 text-sm whitespace-nowrap text-gray-400 hover:text-white hover:bg-[#3d3d3d] rounded transition-colors"
             >
               <span>Workspaces</span>
               <ChevronDown className="w-3 h-3" aria-hidden="true" />
@@ -122,13 +122,13 @@ export const TopBar: React.FC<TopBarProps> = ({
               </div>
             )}
           </div>
-          <button className="flex items-center gap-1 px-2 py-1 text-sm text-gray-400 hover:text-white hover:bg-[#3d3d3d] rounded transition-colors">
+          <button className="hidden items-center gap-1 px-2 py-1 text-sm whitespace-nowrap text-gray-400 hover:text-white hover:bg-[#3d3d3d] rounded transition-colors lg:flex">
             <span>API Network</span>
           </button>
         </div>
 
         {/* Center section - Search */}
-        <div className="flex-1 max-w-xl mx-4">
+        <div className="flex-1 min-w-0 max-w-xl mx-4">
           <button
             onClick={onSearchOpen}
             className="flex items-center gap-2 w-full px-3 py-1.5 bg-[#1e1e1e] border border-[#3d3d3d] rounded-full text-sm text-gray-400 hover:border-[#ff6b35] transition-colors"
@@ -140,7 +140,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         </div>
 
         {/* Right section */}
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 shrink-0">
           <button
             onClick={onTeamOpen}
             aria-label="Invite team members"
@@ -168,7 +168,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           </button>
           <button
             aria-label="Upgrade plan"
-            className="flex items-center gap-1 px-3 py-1 text-sm border border-[#3d3d3d] text-gray-300 hover:bg-[#3d3d3d]/50 rounded transition-colors"
+            className="hidden items-center gap-1 px-3 py-1 text-sm whitespace-nowrap border border-[#3d3d3d] text-gray-300 hover:bg-[#3d3d3d]/50 rounded transition-colors xl:flex"
           >
             <Zap className="w-4 h-4" aria-hidden="true" />
             Upgrade

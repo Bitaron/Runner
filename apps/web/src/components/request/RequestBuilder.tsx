@@ -4,6 +4,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { cn } from '@/lib/utils';
 import { useCollectionsStore } from '@/stores/collectionsStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { saveRequestToServer } from '@/lib/persistence';
+import { toast } from '../sync/SyncStatus';
 import { Tabs, TabPanel } from '../ui/Tabs';
 import { Input } from '../ui/Input';
 import { Select } from '../ui/Select';
@@ -93,6 +95,24 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  const handleSaveMenuItem = async (itemId: string) => {
+    setShowSaveMenu(false);
+    if (itemId !== 'save' || !request) return;
+
+    if (!request.collectionId) {
+      toast.info('Add the request to a collection to save it');
+      return;
+    }
+
+    const saved = await saveRequestToServer(request);
+    if (saved) {
+      useCollectionsStore.getState().updateRequest(request._id, request);
+      toast.success('Request saved');
+    } else {
+      toast.error('Could not save to server');
+    }
+  };
 
   const { collection, folder } = request ? getCollectionAndFolderForRequest(request._id) : { collection: null, folder: null };
 
@@ -256,7 +276,7 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
                   <button
                     key={item.id}
                     role="menuitem"
-                    onClick={() => setShowSaveMenu(false)}
+                    onClick={() => void handleSaveMenuItem(item.id)}
                     className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors text-gray-300 hover:bg-[#3d3d3d] hover:text-gray-100"
                   >
                     {item.label}

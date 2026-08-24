@@ -35,6 +35,8 @@ import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
 import { Logo, LogoWithText } from '../ui/Logo';
 import { apiClient } from '@/lib/api';
+import { createCollectionOnServer } from '@/lib/persistence';
+import { toast } from '../sync/SyncStatus';
 import { getMethodColor } from '@/lib/methodColors';
 
 interface SidebarProps {
@@ -88,6 +90,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [importError, setImportError] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [activeTreeItemId, setActiveTreeItemId] = useState<string | null>(null);
+  const [isCreatingCollection, setIsCreatingCollection] = useState(false);
 
   const sidebarRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
@@ -98,6 +101,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const { collections, addCollection, removeCollection } = useCollectionsStore();
   const { history } = useCollectionsStore();
   const { environments, currentEnvironment, setCurrentEnvironment } = useWorkspaceStore();
+  const { currentWorkspace } = useWorkspaceStore();
 
   const iconRailItems = [
     { id: 'collections', icon: Layers, label: 'Collections' },
@@ -249,25 +253,48 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }
   };
 
-  const handleCreateCollection = () => {
+  const handleCreateCollection = async () => {
     if (!newCollectionName.trim()) return;
-    
-    const newCollection: Collection = {
-      _id: `collection:${crypto.randomUUID()}`,
-      type: 'collection',
-      workspaceId: '',
-      name: newCollectionName,
-      variables: [],
-      folders: [],
-      requests: [],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      createdBy: '',
-    };
-    
-    addCollection(newCollection);
-    setNewCollectionName('');
-    setShowNewCollectionModal(false);
+    if (isCreatingCollection) return;
+
+    setIsCreatingCollection(true);
+
+    const name = newCollectionName.trim();
+    const workspaceId = currentWorkspace?._id || '';
+
+    try {
+      // Try to persist to the server first so collections sync across
+      // devices; fall back to a local-only document when offline/guest.
+      const serverCollection = await createCollectionOnServer({
+        name,
+        description: undefined,
+        variables: [],
+        workspaceId,
+      });
+
+      if (serverCollection) {
+        addCollection(serverCollection);
+      } else {
+        const localCollection: Collection = {
+          _id: `collection:${crypto.randomUUID()}`,
+          type: 'collection',
+          workspaceId,
+          name,
+          variables: [],
+          folders: [],
+          requests: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          createdBy: '',
+        };
+        addCollection(localCollection);
+        toast.error('Saved locally only — could not reach server');
+      }
+    } finally {
+      setIsCreatingCollection(false);
+      setNewCollectionName('');
+      setShowNewCollectionModal(false);
+    }
   };
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -902,7 +929,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <Button variant="secondary" onClick={() => setShowNewCollectionModal(false)}>
               Cancel
             </Button>
-            <Button onClick={handleCreateCollection}>Create</Button>
+            <Button onClick={handleCreateCollection} loading={isCreatingCollection}>
+              Create
+            </Button>
           </div>
         </div>
       </Modal>

@@ -16,6 +16,7 @@ export interface SyncEvent {
 }
 
 type EventHandler = (event: SyncEvent) => void;
+type ConnectionHandler = (connected: boolean) => void;
 
 const BASE_RECONNECT_DELAY = 5000;
 const MAX_RECONNECT_DELAY = 30000;
@@ -29,6 +30,7 @@ class SyncManager {
   private reconnectMaxDelay = MAX_RECONNECT_DELAY;
   private refCount = 0;
   private handlers: Set<EventHandler> = new Set();
+  private connectionHandlers: Set<ConnectionHandler> = new Set();
   private _isConnected = false;
   private _userId: string | null = null;
   private _workspaceId: string | null = null;
@@ -37,6 +39,22 @@ class SyncManager {
 
   get isConnected(): boolean {
     return this._isConnected;
+  }
+
+  /**
+   * Subscribe to connection-state changes so UI (e.g. the bottom bar
+   * status pill) updates reactively instead of polling.
+   */
+  onConnectionChange(handler: ConnectionHandler): () => void {
+    this.connectionHandlers.add(handler);
+    handler(this._isConnected);
+    return () => this.connectionHandlers.delete(handler);
+  }
+
+  private setConnected(connected: boolean): void {
+    if (this._isConnected === connected) return;
+    this._isConnected = connected;
+    this.connectionHandlers.forEach((handler) => handler(connected));
   }
 
   connect(wsUrl: string, token: string, userId: string, workspaceId: string): void {
@@ -71,7 +89,7 @@ class SyncManager {
 
     this.ws.onopen = () => {
       console.log('SyncManager: WebSocket connected');
-      this._isConnected = true;
+      this.setConnected(true);
       this.reconnectAttempts = 0;
 
       this.ws?.send(JSON.stringify({ type: 'auth', token: this._token }));
@@ -98,7 +116,7 @@ class SyncManager {
 
     this.ws.onclose = () => {
       console.log('SyncManager: WebSocket disconnected');
-      this._isConnected = false;
+      this.setConnected(false);
       if (this.refCount > 0) {
         this.attemptReconnect();
       }
@@ -142,7 +160,7 @@ class SyncManager {
       ws.onclose = null;
       ws.close();
     }
-    this._isConnected = false;
+    this.setConnected(false);
   }
 
   sendEvent(event: Omit<SyncEvent, 'userId' | 'timestamp'>): void {
