@@ -111,14 +111,28 @@ router.post('/', optionalAuth, async (req: AuthenticatedRequest, res: Response):
       }
 
       if (body && body.mode !== 'none') {
+        const hasContentType = (hdrs: Record<string, string> | undefined): boolean =>
+          hdrs ? Object.keys(hdrs).some((k) => k.toLowerCase() === 'content-type') : false;
+
         switch (body.mode) {
           case 'raw':
             config.data = body.raw;
             if (!config.headers) config.headers = {};
-            if (body.rawType === 'json') {
-              config.headers['Content-Type'] = 'application/json';
-            } else if (body.rawType === 'xml') {
-              config.headers['Content-Type'] = 'application/xml';
+            if (!hasContentType(config.headers as Record<string, string>)) {
+              if (body.rawType === 'json') {
+                config.headers['Content-Type'] = 'application/json';
+              } else if (body.rawType === 'xml') {
+                config.headers['Content-Type'] = 'application/xml';
+              } else if (body.rawType === 'html') {
+                config.headers['Content-Type'] = 'text/html';
+              } else if (body.rawType === 'text') {
+                config.headers['Content-Type'] = 'text/plain';
+              } else if (!body.rawType) {
+                // align with frontend fallback (defaults to json in UI, but text/plain if unknown)
+                config.headers['Content-Type'] = 'text/plain';
+              } else {
+                config.headers['Content-Type'] = 'text/plain';
+              }
             }
             break;
           
@@ -137,7 +151,9 @@ router.post('/', optionalAuth, async (req: AuthenticatedRequest, res: Response):
               .map((f) => `${encodeURIComponent(f.key)}=${encodeURIComponent(f.value)}`)
               .join('&');
             if (!config.headers) config.headers = {};
-            config.headers['Content-Type'] = 'application/x-www-form-urlencoded';
+            if (!hasContentType(config.headers as Record<string, string>)) {
+              config.headers['Content-Type'] = 'application/x-www-form-urlencoded';
+            }
             break;
           
           case 'graphql':
@@ -146,7 +162,9 @@ router.post('/', optionalAuth, async (req: AuthenticatedRequest, res: Response):
               variables: body.graphql?.variables ? JSON.parse(body.graphql.variables) : undefined,
             });
             if (!config.headers) config.headers = {};
-            config.headers['Content-Type'] = 'application/json';
+            if (!hasContentType(config.headers as Record<string, string>)) {
+              config.headers['Content-Type'] = 'application/json';
+            }
             break;
           
           case 'binary':
