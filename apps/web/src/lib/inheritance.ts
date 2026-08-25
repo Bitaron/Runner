@@ -72,11 +72,13 @@ export function interpolateVariables(
 ): string {
   let result = value;
   
-  const allVars = [...envVariables, ...variables];
+  // Precedence: globals < collection/folder < environment (env overwrites collection)
+  const allVars = [...variables, ...envVariables];
   
   for (const variable of allVars) {
     if (variable.enabled) {
-      const regex = new RegExp(`\\{\\{${variable.key}\\}\\}`, 'g');
+      const escapedKey = variable.key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(`\\{\\{${escapedKey}\\}\\}`, 'g');
       result = result.replace(regex, variable.value);
     }
   }

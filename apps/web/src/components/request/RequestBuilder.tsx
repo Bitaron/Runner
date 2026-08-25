@@ -16,6 +16,7 @@ import type { ApiRequest, HttpMethod, RequestBodyMode, RequestBody, AuthConfig, 
 import { HTTP_METHOD_COLORS } from '@/lib/methodColors';
 import { CodeGenModal } from './CodeGenModal';
 import { VariableHighlighter } from '../environment/VariableTooltip';
+import { getEffectiveVariables } from '@/lib/inheritance';
 
 const HTTP_METHODS: { value: HttpMethod; label: string }[] = [
   { value: 'GET', label: 'GET' },
@@ -156,17 +157,38 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
   };
 
   const interpolateUrl = () => {
-    return getInterpolatedValue(request.url);
+    // Use full interpolation including collection/folder variables for display
+    const collectionVars = getEffectiveVariables(collection, folder);
+    const envVars = [
+      ...globalVariables.filter((v) => v.enabled),
+      ...(currentEnvironment?.variables.filter((v) => v.enabled) || []),
+    ];
+    let result = request.url;
+    const allVars = [...collectionVars, ...envVars];
+    for (const v of allVars) {
+      if (v.enabled) {
+        const escapedKey = v.key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        result = result.replace(new RegExp(`\\{\\{${escapedKey}\\}\\}`, 'g'), v.value);
+      }
+    }
+    // Fallback to store's interpolator for any remaining (keeps env/global precedence)
+    if (result === request.url) return getInterpolatedValue(request.url);
+    return result;
   };
 
   const getVariablesForHighlighter = () => {
     const vars: Array<{ key: string; value: string; scope: 'environment' | 'global' | 'local' }> = [];
+    // Collection/folder variables (local scope)
+    const collectionVars = getEffectiveVariables(collection, folder);
+    collectionVars.forEach((v) => {
+      if (v.enabled) vars.push({ key: v.key, value: v.value, scope: 'local' });
+    });
     if (currentEnvironment) {
-      currentEnvironment.variables.forEach(v => {
+      currentEnvironment.variables.forEach((v) => {
         if (v.enabled) vars.push({ key: v.key, value: v.value, scope: 'environment' });
       });
     }
-    globalVariables.forEach(v => {
+    globalVariables.forEach((v) => {
       if (v.enabled) vars.push({ key: v.key, value: v.value, scope: 'global' });
     });
     return vars;

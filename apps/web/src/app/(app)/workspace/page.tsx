@@ -22,6 +22,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { apiClient } from '@/lib/api';
 import { syncManager } from '@/lib/syncManager';
 import { canSyncToServer, createRequestOnServer, createFolderOnServer } from '@/lib/persistence';
+import { getEffectiveVariables, interpolateVariables } from '@/lib/inheritance';
 import { cn } from '@/lib/utils';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import type { ApiRequest, Collection, Response, Workspace, Folder, Environment } from '@apiforge/shared';
@@ -605,12 +606,69 @@ export default function WorkspacePage() {
       headers.push({ key: 'Content-Type', value: bodyContentType });
     }
 
+    // Interpolate variables in URL, headers, params, and body (Postman {{var}} support)
+    const { currentEnvironment, globalVariables } = useWorkspaceStore.getState();
+    const { collections } = useCollectionsStore.getState();
+    // Find collection/folder for this request to get collection/folder variables
+    let requestCollection: Collection | null = null;
+    let requestFolder: Folder | null = null;
+    if (effectiveRequest.collectionId) {
+      requestCollection = collections.find((c) => c._id === effectiveRequest.collectionId) || null;
+      if (requestCollection && effectiveRequest.folderId) {
+        const findFolder = (folders: Folder[]): Folder | null => {
+          for (const f of folders) {
+            if (f._id === effectiveRequest.folderId) return f;
+            const nested = findFolder(f.folders);
+            if (nested) return nested;
+          }
+          return null;
+        };
+        requestFolder = findFolder(requestCollection.folders);
+      }
+    }
+    const collectionVars = getEffectiveVariables(requestCollection, requestFolder);
+    const envVarsForInterpolation = [
+      ...globalVariables.filter((v) => v.enabled),
+      ...(currentEnvironment?.variables.filter((v) => v.enabled) || []),
+    ];
+    const doInterpolate = (val: string) => interpolateVariables(val, collectionVars, envVarsForInterpolation);
+
+    const interpolatedUrl = doInterpolate(effectiveRequest.url);
+    const interpolatedHeaders = headers.map((h) => ({
+      ...h,
+      value: doInterpolate(h.value),
+    }));
+    const interpolatedParams = effectiveRequest.params
+      .filter((p) => !p.disabled)
+      .map((p) => ({
+        ...p,
+        key: doInterpolate(p.key),
+        value: doInterpolate(p.value),
+      }));
+    const interpolatedBody = (() => {
+      const b = effectiveRequest.body;
+      if (!b || b.mode === 'none') return b;
+      if (b.mode === 'raw' && b.raw) {
+        return { ...b, raw: doInterpolate(b.raw) };
+      }
+      if (b.mode === 'formdata' && b.formdata) {
+        return { ...b, formdata: b.formdata.map((f) => ({ ...f, key: doInterpolate(f.key), value: doInterpolate(f.value) })) };
+      }
+      if (b.mode === 'urlencoded' && b.urlencoded) {
+        return { ...b, urlencoded: b.urlencoded.map((f) => ({ ...f, key: doInterpolate(f.key), value: doInterpolate(f.value) })) };
+      }
+      if (b.mode === 'graphql' && b.graphql) {
+        return { ...b, graphql: { query: doInterpolate(b.graphql.query), variables: b.graphql.variables ? doInterpolate(b.graphql.variables) : b.graphql.variables } };
+      }
+      return b;
+    })();
+
     const payload = {
       method: effectiveRequest.method,
-      url: effectiveRequest.url,
-      headers,
-      params: effectiveRequest.params.filter((p) => !p.disabled),
-      body: effectiveRequest.body,
+      url: interpolatedUrl,
+      headers: interpolatedHeaders,
+      params: interpolatedParams,
+      body: interpolatedBody,
       timeout: 30000,
     };
 

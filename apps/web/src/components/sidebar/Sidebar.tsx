@@ -38,6 +38,7 @@ import { apiClient } from '@/lib/api';
 import { createCollectionOnServer } from '@/lib/persistence';
 import { toast } from '../sync/SyncStatus';
 import { getMethodColor } from '@/lib/methodColors';
+import { useAuthStore } from '@/stores/authStore';
 
 interface SidebarProps {
   onSelectRequest: (request: ApiRequest, collectionId?: string, folderId?: string) => void;
@@ -306,20 +307,56 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
     try {
       const text = await file.text();
-      const postmanData = JSON.parse(text);
+      const postmanData = JSON.parse(text) as Record<string, unknown>;
       
-      const response = await apiClient.post<{ success: boolean; collection?: Collection; error?: string }>(
-        '/api/collections/import',
-        { collection: postmanData }
-      );
+      const workspaceId = currentWorkspace?._id || '';
+      if (!workspaceId) {
+        setImportError('No workspace selected. Please select a workspace first.');
+        setIsImporting(false);
+        e.target.value = '';
+        return;
+      }
 
-      if (response.success && response.data?.collection) {
-        addCollection(response.data.collection as Collection);
+      // Detect Postman environment vs collection: environment has `values` array and no `info`
+      const isPostmanEnvironment = Array.isArray((postmanData as Record<string, unknown>).values) && typeof (postmanData as Record<string, unknown>).name === 'string' && !(postmanData as Record<string, unknown>).info;
+
+      if (isPostmanEnvironment) {
+        const envData = postmanData as unknown as { name: string; values: Array<{ key: string; value: string; enabled?: boolean; type?: string }> };
+        const variables = (envData.values || []).map((v) => ({
+          key: v.key,
+          value: v.value ?? '',
+          type: (v.type === 'secret' ? 'secret' : 'default') as 'default' | 'secret',
+          enabled: v.enabled !== false,
+        })).filter((v) => v.key && v.key.trim().length > 0);
+
+        const response = await apiClient.post<Environment>('/api/environments', {
+          name: envData.name || 'Imported Environment',
+          workspaceId,
+          variables,
+        });
+
+        if (response.success && response.data) {
+          useWorkspaceStore.getState().addEnvironment(response.data as Environment);
+          toast.success(`Environment "${(response.data as Environment).name}" imported`);
+        } else {
+          setImportError(response.error || 'Failed to import environment');
+        }
+        return;
+      }
+
+      const response = await apiClient.post<Collection>('/api/import/postman', {
+        collection: postmanData,
+        workspaceId,
+      });
+
+      if (response.success && response.data) {
+        addCollection(response.data as Collection);
+        toast.success(`Collection "${(response.data as Collection).name}" imported`);
       } else {
         setImportError(response.error || 'Failed to import collection');
       }
     } catch (error) {
-      setImportError('Invalid file format. Please upload a valid Postman collection JSON.');
+      setImportError('Invalid file format. Please upload a valid Postman collection or environment JSON.');
     } finally {
       setIsImporting(false);
       e.target.value = '';
@@ -381,8 +418,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 />
               }
               items={[
-                { id: 'rename', label: 'Rename' },
-                { id: 'delete', label: 'Delete', danger: true },
+                { id: 'rename', label: 'Rename', onClick: () => {
+                  const newName = prompt('Rename folder', folder.name);
+                  if (newName && newName.trim() && newName.trim() !== folder.name) {
+                    import('@/stores/collectionsStore').then(({ useCollectionsStore }) => {
+                      useCollectionsStore.getState().updateFolder(collection._id, folder._id, { name: newName.trim() });
+                    });
+                    // Persist
+                    import('@/lib/api').then(({ apiClient }) => {
+                      apiClient.patch(`/api/collections/${collection._id}`, { folders: useCollectionsStore.getState().collections.find(c=>c._id===collection._id)?.folders }).catch(()=>{});
+                    });
+                  }
+                } },
+                { id: 'delete', label: 'Delete', danger: true, onClick: () => {
+                  if (confirm(`Delete folder "${folder.name}" and all its contents?`)) {
+                    onDeleteFolder?.(collection._id, folder._id);
+                    // Persist: update collection on server with filtered folders
+                    import('@/lib/api').then(({ apiClient }) => {
+                      const coll = useCollectionsStore.getState().collections.find(c=>c._id===collection._id);
+                      if (coll) apiClient.patch(`/api/collections/${coll._id}`, { folders: coll.folders }).catch(()=>{});
+                    });
+                  }
+                } },
               ]}
             />
           </span>
@@ -485,11 +542,69 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 />
               }
               items={[
-                { id: 'addRequest', label: 'Add Request' },
-                { id: 'addFolder', label: 'Add Folder' },
-                { id: 'edit', label: 'Edit' },
-                { id: 'export', label: 'Export' },
-                { id: 'delete', label: 'Delete', danger: true },
+                { id: 'addRequest', label: 'Add Request', onClick: () => {
+                  const userId = useAuthStore.getState().user?._id || 'anonymous';
+                  const newReq = useCollectionsStore.getState().createNewRequest(collection.workspaceId, userId, collection._id);
+                  // Persist via API if possible
+                  import('@/lib/persistence').then(({ createRequestOnServer }) => {
+                    createRequestOnServer(newReq).then((saved) => {
+                      const finalReq = saved || newReq;
+                      const coll = useCollectionsStore.getState().collections.find(c => c._id === collection._id);
+                      if (coll) useCollectionsStore.getState().updateCollection(collection._id, { requests: [...coll.requests, finalReq] });
+                    });
+                  });
+                  onSelectRequest(newReq, collection._id);
+                } },
+                { id: 'addFolder', label: 'Add Folder', onClick: () => onCreateNew?.('folder') },
+                { id: 'edit', label: 'Edit', onClick: () => onSelectCollection?.(collection) },
+                { id: 'export', label: 'Export', onClick: async () => {
+                  try {
+                    const res = await apiClient.get(`/api/import/postman/${collection._id}`);
+                    const data = (res as unknown as { data?: unknown }).data || (res as unknown as { success: boolean; data?: unknown }).data;
+                    const postmanData = (data as unknown as { data?: unknown })?.data || data;
+                    const blob = new Blob([JSON.stringify(postmanData || data, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `${collection.name.replace(/\s+/g, '_')}_postman.json`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                    toast.success(`Exported "${collection.name}"`);
+                  } catch {
+                    // Fallback: direct fetch
+                    try {
+                      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/api/import/postman/${collection._id}`, {
+                        headers: { Authorization: `Bearer ${useCollectionsStore.getState().collections.find(c=>c._id===collection._id) ? '' : ''}` },
+                        credentials: 'include',
+                      });
+                      if (res.ok) {
+                        const j = await res.json();
+                        const postmanData = j.data || j;
+                        const blob = new Blob([JSON.stringify(postmanData, null, 2)], { type: 'application/json' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `${collection.name.replace(/\s+/g, '_')}_postman.json`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                        toast.success(`Exported "${collection.name}"`);
+                      } else {
+                        toast.error('Export failed');
+                      }
+                    } catch { toast.error('Export failed'); }
+                  }
+                } },
+                { id: 'delete', label: 'Delete', danger: true, onClick: () => {
+                  if (confirm(`Delete collection "${collection.name}"? This will move it to trash for 30 days.`)) {
+                    onDeleteCollection?.(collection._id);
+                    // Also soft-delete on server
+                    apiClient.delete(`/api/collections/${collection._id}`).catch(()=>{});
+                  }
+                } },
               ]}
             />
           </span>
@@ -839,9 +954,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
             type="button"
             onClick={() => importInputRef.current?.click()}
             disabled={isImporting}
-            aria-label="Import Postman collection"
+            aria-label="Import Postman collection or environment"
             className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-xs font-medium text-gray-300 bg-[#3d3d3d] rounded hover:bg-[#4d4d4d] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-wait"
-            title="Import Postman collection"
+            title="Import Postman collection or environment"
           >
             <Download className="w-3.5 h-3.5" />
             {isImporting ? 'Importing…' : 'Import'}

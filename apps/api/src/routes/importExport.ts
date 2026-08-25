@@ -94,6 +94,86 @@ router.post('/postman', authMiddleware, async (req: AuthenticatedRequest, res: R
       return;
     }
 
+    if (!workspaceId || typeof workspaceId !== 'string') {
+      res.status(400).json({ success: false, error: 'workspaceId is required' });
+      return;
+    }
+
+    const inferRawType = (raw: string | undefined, options: unknown): ApiRequest['body']['rawType'] => {
+      const language = (options as Record<string, unknown> | undefined)?.raw as Record<string, unknown> | undefined;
+      const lang = typeof language?.language === 'string' ? (language.language as string).toLowerCase() : undefined;
+      if (lang === 'json' || lang === 'javascript') return 'json';
+      if (lang === 'xml') return 'xml';
+      if (lang === 'html') return 'html';
+      if (lang === 'text') return 'text';
+      if (raw !== undefined) {
+        const trimmed = raw.trim();
+        if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+          try { JSON.parse(trimmed); return 'json'; } catch {}
+        }
+        if (trimmed.startsWith('<')) return 'xml';
+      }
+      return 'text';
+    };
+
+    const mapPostmanVariables = (vars: unknown): Variable[] => {
+      if (!Array.isArray(vars)) return [];
+      return (vars as Array<Record<string, unknown>>)
+        .map((v) => ({
+          key: typeof v.key === 'string' ? v.key : '',
+          value: typeof v.value === 'string' ? v.value : String(v.value ?? ''),
+          type: v.type === 'secret' ? 'secret' as const : 'default' as const,
+          enabled: (v as { enabled?: boolean }).enabled !== false && !(v as { disabled?: boolean }).disabled,
+        }))
+        .filter((v) => v.key && v.key.trim().length > 0);
+    };
+
+    // Detect Postman Environment (has values, no info) — handle separately
+    const isPostmanEnvironment = (() => {
+      const rec = rawCollection as Record<string, unknown>;
+      return Array.isArray(rec.values) && typeof rec.name === 'string' && !rec.info;
+    })();
+
+    if (isPostmanEnvironment) {
+      const envRec = rawCollection as Record<string, unknown>;
+      const envName = typeof envRec.name === 'string' && (envRec.name as string).trim() ? (envRec.name as string).trim() : 'Imported Environment';
+      const envValues = Array.isArray(envRec.values) ? envRec.values : [];
+      const variables: Variable[] = (envValues as Array<Record<string, unknown>>)
+        .map((v) => ({
+          key: typeof v.key === 'string' ? v.key : '',
+          value: typeof v.value === 'string' ? v.value : String(v.value ?? ''),
+          type: v.type === 'secret' ? 'secret' as const : 'default' as const,
+          enabled: (v as { enabled?: boolean }).enabled !== false && !(v as { disabled?: boolean }).disabled,
+        }))
+        .filter((v) => v.key && v.key.trim().length > 0);
+
+      if (variables.length > 0) {
+        const varErrors: string[] = [];
+        for (const v of variables) {
+          if (!v.key.trim() || typeof v.value !== 'string') varErrors.push(`variable ${v.key} invalid`);
+        }
+        if (varErrors.length) {
+          res.status(400).json({ success: false, error: `Invalid Postman environment: ${varErrors.join(', ')}` });
+          return;
+        }
+      }
+
+      const environment = {
+        _id: `env:${uuidv4()}`,
+        type: 'environment' as const,
+        workspaceId,
+        name: envName,
+        variables,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        isGlobal: false,
+      };
+
+      await createDocument(environment as unknown as import('@apiforge/shared').Environment);
+      res.status(201).json({ success: true, data: environment });
+      return;
+    }
+
     const validationErrors = validatePostmanCollection(rawCollection);
     if (validationErrors.length > 0) {
       res.status(400).json({ success: false, error: `Invalid Postman collection: ${validationErrors.join(', ')}` });
@@ -102,18 +182,13 @@ router.post('/postman', authMiddleware, async (req: AuthenticatedRequest, res: R
 
     const postmanCollection = rawCollection as PostmanCollection;
 
-    if (!workspaceId || typeof workspaceId !== 'string') {
-      res.status(400).json({ success: false, error: 'workspaceId is required' });
-      return;
-    }
-
     const collection: Collection = {
       _id: `collection:${uuidv4()}`,
       type: 'collection',
       workspaceId,
       name: postmanCollection.info.name,
       description: postmanCollection.info.description,
-      variables: postmanCollection.variable || [],
+      variables: mapPostmanVariables(postmanCollection.variable),
       auth: postmanCollection.auth,
       preRequestScript: (() => {
         const exec = postmanCollection.event?.find((e) => e.listen === 'prerequest')?.script?.exec;
@@ -136,9 +211,18 @@ router.post('/postman', authMiddleware, async (req: AuthenticatedRequest, res: R
 
       for (const postmanItem of item.item || []) {
         if (postmanItem.request) {
-          const url = typeof postmanItem.request.url === 'string' 
-            ? postmanItem.request.url 
-            : postmanItem.request.url?.raw || '';
+          const urlObj = postmanItem.request.url;
+          const url = typeof urlObj === 'string' 
+            ? urlObj 
+            : urlObj?.raw || '';
+          const queryParams: KeyValue[] = Array.isArray((urlObj as Record<string, unknown> | undefined)?.query)
+            ? ((urlObj as Record<string, unknown>).query as Array<Record<string, unknown>>).map((q) => ({
+                key: typeof q.key === 'string' ? q.key : '',
+                value: typeof q.value === 'string' ? q.value : '',
+                description: typeof q.description === 'string' ? q.description : undefined,
+                disabled: Boolean((q as { disabled?: boolean }).disabled),
+              }))
+            : [];
 
           const headers: KeyValue[] = postmanItem.request.header?.map((h) => ({
             key: h.key,
@@ -149,14 +233,18 @@ router.post('/postman', authMiddleware, async (req: AuthenticatedRequest, res: R
           let body: ApiRequest['body'] = { mode: 'none' };
           
           if (postmanItem.request.body) {
-            switch (postmanItem.request.body.mode) {
-              case 'raw':
+            const bodyMode = postmanItem.request.body.mode;
+            const bodyRawOptions = (postmanItem.request.body as Record<string, unknown>).options;
+            switch (bodyMode) {
+              case 'raw': {
+                const raw = postmanItem.request.body.raw;
                 body = {
                   mode: 'raw',
-                  raw: postmanItem.request.body.raw,
-                  rawType: 'json',
+                  raw,
+                  rawType: inferRawType(raw, bodyRawOptions),
                 };
                 break;
+              }
               case 'formdata':
                 body = {
                   mode: 'formdata',
@@ -186,8 +274,14 @@ router.post('/postman', authMiddleware, async (req: AuthenticatedRequest, res: R
                   },
                 };
                 break;
+              default:
+                body = { mode: 'none' };
+                break;
             }
           }
+
+          // Strip query string from raw URL when params are present to avoid double-encoding (buildUrl will re-add)
+          const baseUrl = queryParams.length > 0 && url.includes('?') ? url.split('?')[0] : url;
 
           const request: ApiRequest = {
             _id: `request:${uuidv4()}`,
@@ -197,8 +291,8 @@ router.post('/postman', authMiddleware, async (req: AuthenticatedRequest, res: R
             workspaceId: collection.workspaceId,
             name: postmanItem.name,
             method: (postmanItem.request.method || 'GET').toUpperCase() as ApiRequest['method'],
-            url,
-            params: [],
+            url: baseUrl,
+            params: queryParams,
             headers,
             body,
             auth: postmanItem.request.auth || { type: 'none' },
@@ -220,11 +314,26 @@ router.post('/postman', authMiddleware, async (req: AuthenticatedRequest, res: R
 
         if (postmanItem.item) {
           const folderId = `folder:${uuidv4()}`;
+          const folderAuth = (postmanItem as unknown as Record<string, unknown>).auth as AuthConfig | undefined;
+          const folderVars = mapPostmanVariables((postmanItem as unknown as Record<string, unknown>).variable);
+          const folderDesc = typeof (postmanItem as unknown as Record<string, unknown>).description === 'string' ? (postmanItem as unknown as Record<string, unknown>).description as string : '';
+          const folderEvents = (postmanItem as { event?: Array<{ listen: 'prerequest' | 'test'; script: { exec: string | string[] } }> }).event;
+          const folderPre = (() => {
+            const exec = folderEvents?.find((e) => e.listen === 'prerequest')?.script?.exec;
+            return Array.isArray(exec) ? exec.join('\n') : (exec as string | undefined);
+          })();
+          const folderTest = (() => {
+            const exec = folderEvents?.find((e) => e.listen === 'test')?.script?.exec;
+            return Array.isArray(exec) ? exec.join('\n') : (exec as string | undefined);
+          })();
           const folder: Folder = {
             _id: folderId,
             name: postmanItem.name,
-            description: '',
-            variables: [],
+            description: folderDesc,
+            variables: folderVars,
+            auth: folderAuth,
+            preRequestScript: folderPre,
+            testScript: folderTest,
             requests: [],
             folders: [],
           };
@@ -271,9 +380,16 @@ router.get('/postman/:id', authMiddleware, async (req: AuthenticatedRequest, res
 
       if (request.body?.mode && request.body.mode !== 'none') {
         switch (request.body.mode) {
-          case 'raw':
-            body = { mode: 'raw', raw: request.body.raw };
+          case 'raw': {
+            const rawTypeToLanguage: Record<string, string> = { json: 'json', xml: 'xml', html: 'html', text: 'text' };
+            const lang = rawTypeToLanguage[request.body.rawType || 'text'] || 'text';
+            body = { 
+              mode: 'raw', 
+              raw: request.body.raw,
+              options: { raw: { language: lang } } as unknown as PostmanItem['request'] extends { body?: { options?: unknown } } ? { raw: { language: string } } : never,
+            } as unknown as PostmanItem['request'] extends { body?: infer B } ? B : never;
             break;
+          }
           case 'formdata':
             body = {
               mode: 'formdata',
@@ -307,6 +423,14 @@ router.get('/postman/:id', authMiddleware, async (req: AuthenticatedRequest, res
         }
       }
 
+      const requestEvents: PostmanItem['event'] = [];
+      if (request.preRequestScript) {
+        requestEvents.push({ listen: 'prerequest', script: { type: 'text/javascript', exec: request.preRequestScript.split('\n') } });
+      }
+      if (request.testScript) {
+        requestEvents.push({ listen: 'test', script: { type: 'text/javascript', exec: request.testScript.split('\n') } });
+      }
+
       return {
         name: request.name || 'Untitled request',
         request: {
@@ -320,19 +444,31 @@ router.get('/postman/:id', authMiddleware, async (req: AuthenticatedRequest, res
             raw: queryParams.length > 0 ? `${url}?${queryParams.map((p) => `${p.key}=${p.value}`).join('&')}` : url,
           },
           body,
-          auth: request.auth,
+          auth: request.auth?.type && request.auth.type !== 'none' ? request.auth : undefined,
         },
+        event: requestEvents.length > 0 ? requestEvents : undefined,
       };
     };
 
     const convertFolder = (folder: Folder): PostmanItem => {
+      const folderEvents: PostmanItem['event'] = [];
+      if (folder.preRequestScript) {
+        folderEvents.push({ listen: 'prerequest', script: { type: 'text/javascript', exec: folder.preRequestScript.split('\n') } });
+      }
+      if (folder.testScript) {
+        folderEvents.push({ listen: 'test', script: { type: 'text/javascript', exec: folder.testScript.split('\n') } });
+      }
       return {
         name: folder.name || 'Untitled folder',
+        description: folder.description,
+        auth: folder.auth?.type && folder.auth.type !== 'none' ? folder.auth : undefined,
+        variable: Array.isArray(folder.variables) && folder.variables.length > 0 ? folder.variables : undefined,
+        event: folderEvents.length > 0 ? folderEvents : undefined,
         item: [
           ...(Array.isArray(folder.requests) ? folder.requests.map(convertRequest) : []),
           ...(Array.isArray(folder.folders) ? folder.folders.map(convertFolder) : []),
         ],
-      };
+      } as unknown as PostmanItem;
     };
 
     const postmanCollection: PostmanCollection = {
