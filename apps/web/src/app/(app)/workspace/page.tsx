@@ -249,6 +249,40 @@ export default function WorkspacePage() {
       : 'Runner - API Development Platform';
   }, [currentWorkspace]);
 
+  // Global drag handling for split panes (vertical + horizontal)
+  // Ensures dragging continues even if cursor leaves the container
+  useEffect(() => {
+    if (!isDragging && !isDraggingVertical) return undefined;
+    const handleWindowMouseMove = (e: MouseEvent) => {
+      const container = document.getElementById('workspace-split-container');
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+      if (isDragging) {
+        const pct = ((e.clientX - rect.left) / rect.width) * 100;
+        setSplitPosition(Math.max(20, Math.min(80, pct)));
+      }
+      if (isDraggingVertical) {
+        const pct = ((e.clientY - rect.top) / rect.height) * 100;
+        setVerticalSplitPosition(Math.max(20, Math.min(80, pct)));
+      }
+    };
+    const handleWindowMouseUp = () => {
+      setIsDragging(false);
+      setIsDraggingVertical(false);
+    };
+    window.addEventListener('mousemove', handleWindowMouseMove);
+    window.addEventListener('mouseup', handleWindowMouseUp);
+    // Prevent text selection while dragging
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = isDragging ? 'col-resize' : 'row-resize';
+    return () => {
+      window.removeEventListener('mousemove', handleWindowMouseMove);
+      window.removeEventListener('mouseup', handleWindowMouseUp);
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+    };
+  }, [isDragging, isDraggingVertical]);
+
   const appendAppLog = useCallback((message: string) => {
     const timestamp = new Date().toLocaleTimeString();
     setAppLogs((prev) => [...prev.slice(-99), `[${timestamp}] ${message}`]);
@@ -783,8 +817,13 @@ export default function WorkspacePage() {
           await executeViewRequest(built);
         }
 
-        addToHistory(built.request);
+        try {
+          addToHistory(built.request);
+        } catch (historyError) {
+          console.error('addToHistory failed', historyError);
+        }
       } catch (error) {
+        console.error('runSendFlow error', error, (error as Error)?.stack);
         setResponse(createErrorState(error instanceof Error ? error.message : 'Request failed'));
         appendAppLog(`${currentRequest?.method ?? ''} ${currentRequest?.url ?? ''} failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
       } finally {
@@ -908,13 +947,33 @@ export default function WorkspacePage() {
           />
         )}
 
-        <div className="flex-1 overflow-hidden relative" onMouseMove={(e) => {
-          if (isDragging) {
-            const container = e.currentTarget.getBoundingClientRect();
-            const newPosition = ((e.clientX - container.left) / container.width) * 100;
-            setSplitPosition(Math.max(20, Math.min(80, newPosition)));
-          }
-        }} onMouseUp={() => setIsDragging(false)} onMouseLeave={() => setIsDragging(false)}>
+        <div
+          id="workspace-split-container"
+          className={cn('flex-1 overflow-hidden relative', (isDragging || isDraggingVertical) && 'select-none')}
+          onMouseMove={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            if (isDragging) {
+              const pct = ((e.clientX - rect.left) / rect.width) * 100;
+              setSplitPosition(Math.max(20, Math.min(80, pct)));
+            }
+            if (isDraggingVertical) {
+              const pct = ((e.clientY - rect.top) / rect.height) * 100;
+              setVerticalSplitPosition(Math.max(20, Math.min(80, pct)));
+            }
+          }}
+          onMouseUp={() => {
+            setIsDragging(false);
+            setIsDraggingVertical(false);
+          }}
+          onMouseLeave={() => {
+            // Don't clear on leave when actively dragging (window handler will handle mouseup)
+            // Only clear if not dragging to avoid stuck state
+            if (!isDragging && !isDraggingVertical) {
+              setIsDragging(false);
+              setIsDraggingVertical(false);
+            }
+          }}
+        >
           {layout === 'horizontal' ? (
             <>
               <div className="absolute inset-0 overflow-y-auto" style={{ width: `${splitPosition}%` }}>
@@ -963,9 +1022,12 @@ export default function WorkspacePage() {
                 aria-valuemin={20}
                 aria-valuemax={80}
                 tabIndex={0}
-                className="absolute top-0 bottom-0 w-1 bg-[#3d3d3d] hover:bg-[#ff6b35] cursor-col-resize z-10 focus-visible:bg-[#ff6b35] focus:outline-none"
+                className="absolute top-0 bottom-0 w-1 bg-[#3d3d3d] hover:bg-[#ff6b35] cursor-col-resize z-10 focus-visible:bg-[#ff6b35] focus:outline-none active:bg-[#ff6b35]"
                 style={{ left: `${splitPosition}%` }}
-                onMouseDown={() => setIsDragging(true)}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  setIsDragging(true);
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'ArrowLeft') {
                     e.preventDefault();
@@ -1038,9 +1100,12 @@ export default function WorkspacePage() {
                 aria-valuemin={20}
                 aria-valuemax={80}
                 tabIndex={0}
-                className="absolute left-0 right-0 h-1 bg-[#3d3d3d] hover:bg-[#ff6b35] cursor-row-resize z-10 focus-visible:bg-[#ff6b35] focus:outline-none"
+                className="absolute left-0 right-0 h-1 bg-[#3d3d3d] hover:bg-[#ff6b35] cursor-row-resize z-10 focus-visible:bg-[#ff6b35] focus:outline-none active:bg-[#ff6b35]"
                 style={{ top: `${verticalSplitPosition}%` }}
-                onMouseDown={() => setIsDraggingVertical(true)}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  setIsDraggingVertical(true);
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'ArrowUp') {
                     e.preventDefault();

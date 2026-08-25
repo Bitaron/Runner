@@ -332,64 +332,66 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
           ))}
         </select>
         
-        <div className="flex-1 relative">
-          <Input
-            value={request.url}
-            onChange={(e) => {
-              handleChange('url', e.target.value);
-              setHideUrlVarSuggestions(false);
-              setActiveUrlVarIndex(0);
-            }}
-            onKeyDown={(e) => {
-              if (!urlVariableMatch || urlVariableSuggestions.length === 0) return;
-              if (e.key === 'Escape') {
-                setHideUrlVarSuggestions(true);
-              } else if (e.key === 'Enter') {
-                e.preventDefault();
-                insertUrlVariable(
-                  urlVariableSuggestions[Math.min(activeUrlVarIndex, urlVariableSuggestions.length - 1)].key
-                );
-              } else if (e.key === 'ArrowDown') {
-                e.preventDefault();
-                setActiveUrlVarIndex((i) => Math.min(i + 1, urlVariableSuggestions.length - 1));
-              } else if (e.key === 'ArrowUp') {
-                e.preventDefault();
-                setActiveUrlVarIndex((i) => Math.max(i - 1, 0));
-              }
-            }}
-            placeholder="Enter request URL"
-            className="font-mono text-sm w-full"
-            aria-autocomplete="list"
-          />
-          {urlVariableMatch && urlVariableSuggestions.length > 0 && (
-            <div
-              role="listbox"
-              className="absolute top-full left-0 mt-1 w-64 bg-[#2d2d2e] border border-[#3d3d3d] rounded-lg shadow-xl z-50 py-1"
-            >
-              {urlVariableSuggestions.map((v, i) => (
-                <button
-                  key={`${v.scope}:${v.key}`}
-                  role="option"
-                  aria-selected={i === activeUrlVarIndex}
-                  onMouseEnter={() => setActiveUrlVarIndex(i)}
-                  onClick={() => insertUrlVariable(v.key)}
-                  className={cn(
-                    'w-full px-3 py-2 text-left text-sm text-gray-200 flex items-center justify-between transition-colors',
-                    i === activeUrlVarIndex && 'bg-[#3d3d3d]'
-                  )}
-                >
-                  <span className="font-mono text-[#ff6b35]">{`{{${v.key}}}`}</span>
-                  <span className="text-xs text-gray-500 truncate ml-2">{v.value}</span>
-                </button>
-              ))}
-            </div>
-          )}
+        <div className="flex-1 min-w-0 flex flex-col gap-1">
+          <div className="relative">
+            <Input
+              value={request.url}
+              onChange={(e) => {
+                handleChange('url', e.target.value);
+                setHideUrlVarSuggestions(false);
+                setActiveUrlVarIndex(0);
+              }}
+              onKeyDown={(e) => {
+                if (!urlVariableMatch || urlVariableSuggestions.length === 0) return;
+                if (e.key === 'Escape') {
+                  setHideUrlVarSuggestions(true);
+                } else if (e.key === 'Enter') {
+                  e.preventDefault();
+                  insertUrlVariable(
+                    urlVariableSuggestions[Math.min(activeUrlVarIndex, urlVariableSuggestions.length - 1)].key
+                  );
+                } else if (e.key === 'ArrowDown') {
+                  e.preventDefault();
+                  setActiveUrlVarIndex((i) => Math.min(i + 1, urlVariableSuggestions.length - 1));
+                } else if (e.key === 'ArrowUp') {
+                  e.preventDefault();
+                  setActiveUrlVarIndex((i) => Math.max(i - 1, 0));
+                }
+              }}
+              placeholder="Enter request URL"
+              className="font-mono text-sm w-full"
+              aria-autocomplete="list"
+            />
+            {urlVariableMatch && urlVariableSuggestions.length > 0 && (
+              <div
+                role="listbox"
+                className="absolute top-full left-0 mt-1 w-64 bg-[#2d2d2e] border border-[#3d3d3d] rounded-lg shadow-xl z-50 py-1"
+              >
+                {urlVariableSuggestions.map((v, i) => (
+                  <button
+                    key={`${v.scope}:${v.key}`}
+                    role="option"
+                    aria-selected={i === activeUrlVarIndex}
+                    onMouseEnter={() => setActiveUrlVarIndex(i)}
+                    onClick={() => insertUrlVariable(v.key)}
+                    className={cn(
+                      'w-full px-3 py-2 text-left text-sm text-gray-200 flex items-center justify-between transition-colors',
+                      i === activeUrlVarIndex && 'bg-[#3d3d3d]'
+                    )}
+                  >
+                    <span className="font-mono text-[#ff6b35]">{`{{${v.key}}}`}</span>
+                    <span className="text-xs text-gray-500 truncate ml-2">{v.value}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           {request.url.includes('{{') && !urlVariableMatch && (
-            <div className="absolute left-0 top-full mt-1 w-full">
-              <VariableHighlighter
-                text={request.url}
-              variables={getVariablesForHighlighter().map(v => ({ key: v.key, value: v.value, scope: v.scope }))}
-              />
+            <div className="flex items-center gap-1.5 min-w-0 overflow-hidden pr-1 py-0.5">
+              <span className="shrink-0 text-[11px] font-mono text-gray-500">Resolved:</span>
+              <span className="min-w-0 truncate text-xs font-mono text-gray-400" title={interpolateUrl()}>
+                {interpolateUrl()}
+              </span>
             </div>
           )}
         </div>
