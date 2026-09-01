@@ -1149,8 +1149,8 @@ export default function WorkspacePage() {
           }}
         >
           {layout === 'horizontal' ? (
-            <>
-              <div className="absolute inset-0 overflow-y-auto" style={{ width: `${splitPosition}%` }}>
+            <div className="absolute inset-0 flex">
+              <div className="overflow-y-auto min-w-0" style={{ width: `${splitPosition}%` }}>
                 {currentTab?.type === 'collection' && (
                   <CollectionFolderViewer
                     type="collection"
@@ -1196,8 +1196,7 @@ export default function WorkspacePage() {
                 aria-valuemin={20}
                 aria-valuemax={80}
                 tabIndex={0}
-                className="absolute top-0 bottom-0 w-1 bg-[#3d3d3d] hover:bg-[#ff6b35] cursor-col-resize z-10 focus-visible:bg-[#ff6b35] focus:outline-none active:bg-[#ff6b35]"
-                style={{ left: `${splitPosition}%` }}
+                className="shrink-0 w-2 bg-transparent hover:bg-[#ff6b35]/20 cursor-col-resize z-10 flex items-center justify-center group focus-visible:bg-[#ff6b35]/20 focus:outline-none touch-none"
                 onMouseDown={(e) => {
                   e.preventDefault();
                   setIsDragging(true);
@@ -1211,8 +1210,10 @@ export default function WorkspacePage() {
                     setSplitPosition((prev) => Math.min(80, prev + 2));
                   }
                 }}
-              />
-              <div className="absolute inset-0 overflow-y-auto" style={{ left: `${splitPosition}%` }}>
+              >
+                <div className="w-1 h-full bg-[#3d3d3d] group-hover:bg-[#ff6b35] group-active:bg-[#ff6b35] group-focus-visible:bg-[#ff6b35]" />
+              </div>
+              <div className="flex-1 overflow-y-auto min-w-0 min-h-0">
                 {currentTab?.type === 'request' && activePanel === 'http' && (
                   <ResponseViewer
                     response={response}
@@ -1223,11 +1224,11 @@ export default function WorkspacePage() {
                   />
                 )}
               </div>
-            </>
+            </div>
           ) : (
-            <>
-              <div 
-                className="absolute inset-0 overflow-y-auto border-b border-[#3d3d3d]"
+            <div className="absolute inset-0 flex flex-col">
+              <div
+                className="overflow-y-auto border-b border-[#3d3d3d] min-h-0"
                 style={{ height: `${verticalSplitPosition}%` }}
               >
                 {currentTab?.type === 'collection' && (
@@ -1275,8 +1276,7 @@ export default function WorkspacePage() {
                 aria-valuemin={20}
                 aria-valuemax={80}
                 tabIndex={0}
-                className="absolute left-0 right-0 h-1 bg-[#3d3d3d] hover:bg-[#ff6b35] cursor-row-resize z-10 focus-visible:bg-[#ff6b35] focus:outline-none active:bg-[#ff6b35]"
-                style={{ top: `${verticalSplitPosition}%` }}
+                className="shrink-0 h-2 bg-transparent hover:bg-[#ff6b35]/20 cursor-row-resize z-10 flex items-center justify-center group focus-visible:bg-[#ff6b35]/20 focus:outline-none touch-none"
                 onMouseDown={(e) => {
                   e.preventDefault();
                   setIsDraggingVertical(true);
@@ -1290,11 +1290,10 @@ export default function WorkspacePage() {
                     setVerticalSplitPosition((prev) => Math.min(80, prev + 2));
                   }
                 }}
-              />
-              <div 
-                className="absolute inset-0 overflow-y-auto"
-                style={{ top: `${verticalSplitPosition}%` }}
               >
+                <div className="h-1 w-full bg-[#3d3d3d] group-hover:bg-[#ff6b35] group-active:bg-[#ff6b35] group-focus-visible:bg-[#ff6b35]" />
+              </div>
+              <div className="flex-1 overflow-y-auto min-h-0">
                 {currentTab?.type === 'request' && activePanel === 'http' && (
                   <ResponseViewer
                     response={response}
@@ -1305,7 +1304,7 @@ export default function WorkspacePage() {
                   />
                 )}
               </div>
-            </>
+            </div>
           )}
         </div>
 

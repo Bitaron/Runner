@@ -34,9 +34,14 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 lerna-debug.log*
+api.log
+web.log
+*.log
+logs/
 
-# Testing
-coverage/
+# Trash - discarded artifacts (screenshots, old docs, agent dumps, build cache)
+trash/
+.trash/
 
 # Uploads
 apps/api/uploads/*
