@@ -27,22 +27,34 @@ const parseCookies = (setCookieHeader: string[] | undefined): Array<{ name: stri
 
 const applyAuth = (config: AxiosRequestConfig, auth: AuthConfig, params: KeyValue[], headers: KeyValue[]): void => {
   config.headers = config.headers || {};
+  const hasHeader = (name: string) =>
+    headers.some((h) => !h.disabled && h.key.trim().toLowerCase() === name.toLowerCase()) ||
+    Object.keys(config.headers as Record<string, string>).some((k) => k.toLowerCase() === name.toLowerCase());
   switch (auth.type) {
     case 'bearer':
-      config.headers!['Authorization'] = `${auth.bearer?.prefix || 'Bearer'} ${auth.bearer?.token}`;
+      if (!hasHeader('Authorization')) {
+        config.headers!['Authorization'] = `${auth.bearer?.prefix || 'Bearer'} ${auth.bearer?.token}`;
+      }
       break;
     
     case 'basic': {
-      const credentials = Buffer.from(`${auth.basic?.username}:${auth.basic?.password}`).toString('base64');
-      config.headers!['Authorization'] = `Basic ${credentials}`;
+      if (!hasHeader('Authorization')) {
+        const credentials = Buffer.from(`${auth.basic?.username}:${auth.basic?.password}`).toString('base64');
+        config.headers!['Authorization'] = `Basic ${credentials}`;
+      }
       break;
     }
     
     case 'apikey':
       if (auth.apikey?.location === 'header') {
-        config.headers![auth.apikey.key] = auth.apikey.value;
+        if (!hasHeader(auth.apikey.key)) {
+          config.headers![auth.apikey.key] = auth.apikey.value;
+        }
       } else {
-        params.push({ key: auth.apikey?.key || '', value: auth.apikey?.value || '' });
+        // Avoid duplicate query param if already explicitly present
+        if (!params.some((p) => !p.disabled && p.key === auth.apikey?.key)) {
+          params.push({ key: auth.apikey?.key || '', value: auth.apikey?.value || '' });
+        }
       }
       break;
     
@@ -108,6 +120,32 @@ router.post('/', optionalAuth, async (req: AuthenticatedRequest, res: Response):
 
       if (auth && auth.type !== 'none') {
         applyAuth(config, auth, filteredParams, filteredHeaders);
+      }
+
+      // ── gRPC stub (unary) ──
+      if (body && body.mode === 'grpc') {
+        const grpc = body.grpc || { service: '', method: '', message: '', metadata: [] };
+        const mockBody = JSON.stringify({
+          _grpcStub: true,
+          service: grpc.service,
+          method: grpc.method,
+          serverUrl: grpc.serverUrl || url,
+          message: (() => { try { return JSON.parse(grpc.message || '{}'); } catch { return grpc.message; } })(),
+          metadata: grpc.metadata?.filter(m => !m.disabled) || [],
+          note: 'gRPC execution is stubbed — install @grpc/grpc-js and provide .proto to enable real calls. This mock echo returns your message.',
+        }, null, 2);
+        const responseData: ApiResponse = {
+          status: 200,
+          statusText: 'OK (gRPC mock)',
+          headers: { 'content-type': 'application/json', 'x-grpc-stub': 'true' },
+          body: mockBody,
+          contentType: 'application/json',
+          time: Date.now() - startTime,
+          size: Buffer.byteLength(mockBody, 'utf8'),
+          cookies: [],
+        };
+        res.json({ success: true, data: responseData });
+        return;
       }
 
       if (body && body.mode !== 'none') {

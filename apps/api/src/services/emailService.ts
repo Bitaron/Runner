@@ -34,7 +34,7 @@ export interface InviteEmailParams {
   to: string;
   teamName: string;
   inviterEmail: string;
-  role: 'admin' | 'member';
+  role: 'admin' | 'member' | 'viewer';
 }
 
 export const sendInvite = async (params: InviteEmailParams): Promise<void> => {

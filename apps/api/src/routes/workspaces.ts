@@ -39,11 +39,39 @@ router.post('/', authMiddleware, async (req: AuthenticatedRequest, res: Response
       return;
     }
 
-    const { name, description } = req.body;
+    const { name, description, ownerType, ownerId } = req.body as { name?: string; description?: string; ownerType?: 'user' | 'team'; ownerId?: string };
 
     if (!name) {
       res.status(400).json({ success: false, error: 'Name is required' });
       return;
+    }
+
+    let finalOwnerType: 'user' | 'team' = 'user';
+    let finalOwnerId = req.user.userId;
+
+    if (ownerType === 'team' && ownerId) {
+      const db = getDb();
+      try {
+        const teamDoc = await db.get(ownerId) as unknown as { _id: string; type: string; ownerId: string; members: Array<{ userId: string; role: string }> };
+        if (teamDoc && teamDoc.type === 'team') {
+          const isOwner = teamDoc.ownerId === req.user!.userId;
+          const member = teamDoc.members.find(m => m.userId === req.user!.userId);
+          const canCreate = isOwner || member?.role === 'admin';
+          if (canCreate) {
+            finalOwnerType = 'team';
+            finalOwnerId = ownerId;
+          } else {
+            res.status(403).json({ success: false, error: 'Not authorized to create team workspace' });
+            return;
+          }
+        } else {
+          res.status(404).json({ success: false, error: 'Team not found' });
+          return;
+        }
+      } catch {
+        res.status(404).json({ success: false, error: 'Team not found' });
+        return;
+      }
     }
 
     const workspace: Workspace = {
@@ -51,8 +79,8 @@ router.post('/', authMiddleware, async (req: AuthenticatedRequest, res: Response
       type: 'workspace',
       name,
       description,
-      ownerType: 'user',
-      ownerId: req.user.userId,
+      ownerType: finalOwnerType,
+      ownerId: finalOwnerId,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };

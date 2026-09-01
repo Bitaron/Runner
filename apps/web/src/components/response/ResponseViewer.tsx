@@ -12,6 +12,7 @@ interface ResponseViewerProps {
   isLoading: boolean;
   consoleLogs: string[];
   testResults: Array<{ name: string; passed: boolean; error?: string }>;
+  visualizerHtml?: string | null;
 }
 
 const toBase64 = (body: string | ArrayBuffer | Uint8Array): string => {
@@ -40,6 +41,7 @@ export const ResponseViewer: React.FC<ResponseViewerProps> = ({
   isLoading,
   consoleLogs,
   testResults,
+  visualizerHtml,
 }) => {
   const [activeTab, setActiveTab] = useState('body');
   const [bodyView, setBodyView] = useState<'pretty' | 'raw' | 'preview'>('pretty');
@@ -330,32 +332,88 @@ export const ResponseViewer: React.FC<ResponseViewerProps> = ({
 
         {activeTab === 'visualize' && (
           <TabPanel>
-            <div className="p-4">
-              <p className="text-gray-400 text-sm mb-4">Visualize your response data in different formats</p>
-              <div className="grid grid-cols-2 gap-4">
-                {[
-                  { title: 'JSON Tree', description: 'View response as interactive JSON tree' },
-                  { title: 'Table View', description: 'Convert JSON array to table' },
-                  { title: 'Chart', description: 'Visualize data as bar/line chart' },
-                  { title: 'HTML Preview', description: 'Render HTML response in frame' },
-                ].map(({ title, description }) => (
-                  <button
-                    key={title}
-                    disabled
-                    aria-disabled="true"
-                    className="p-4 bg-[#1e1e1e] rounded-lg border border-[#3d3d3d] text-left opacity-60 cursor-not-allowed"
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="text-white font-medium">{title}</h4>
-                      <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-[#ff6b35]/10 text-[#ff6b35] border border-[#ff6b35]/30">
-                        Coming soon
-                      </span>
-                    </div>
-                    <p className="text-gray-500 text-sm">{description}</p>
-                  </button>
-                ))}
+            {visualizerHtml ? (
+              <div className="p-2 h-full flex flex-col">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs text-gray-400">Rendered via <code>pm.visualizer.set()</code></span>
+                  <Button variant="ghost" size="sm" onClick={() => navigator.clipboard.writeText(visualizerHtml)}>Copy HTML</Button>
+                </div>
+                <iframe
+                  srcDoc={visualizerHtml}
+                  className="flex-1 w-full min-h-[300px] bg-white rounded border border-[#3d3d3d]"
+                  title="Visualizer"
+                  sandbox="allow-scripts"
+                />
               </div>
-            </div>
+            ) : (() => {
+              let parsed: unknown = null;
+              let isJsonArray = false;
+              let tableRows: Record<string, unknown>[] = [];
+              let tableHeaders: string[] = [];
+              let chartData: { label: string; value: number }[] = [];
+              try {
+                parsed = JSON.parse(response.body);
+                if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'object') {
+                  isJsonArray = true;
+                  tableRows = parsed as Record<string, unknown>[];
+                  tableHeaders = Array.from(new Set(tableRows.flatMap(r => Object.keys(r)))).slice(0, 6);
+                  // try to find numeric field for chart
+                  const numericKey = tableHeaders.find(k => tableRows.some(r => typeof r[k] === 'number'));
+                  if (numericKey) chartData = tableRows.slice(0, 10).map((r, i) => ({ label: String(r[tableHeaders[0]] ?? i), value: Number(r[numericKey]) || 0 }));
+                }
+              } catch {}
+              return (
+                <div className="p-4 space-y-4">
+                  <p className="text-gray-400 text-sm">Visualize your response — use <code className="bg-[#2d2d2d] px-1 rounded">pm.visualizer.set(template, data)</code> in Tests to render custom HTML (Handlebars supported).</p>
+                  {isJsonArray ? (
+                    <>
+                      <div>
+                        <h4 className="text-white font-medium mb-2">Table View <span className="text-xs text-gray-500">({tableRows.length} rows)</span></h4>
+                        <div className="overflow-x-auto rounded border border-[#3d3d3d]">
+                          <table className="w-full text-sm">
+                            <thead><tr className="bg-[#2d2d2d] text-left text-gray-400">{tableHeaders.map(h => <th key={h} className="px-2 py-1 font-medium">{h}</th>)}</tr></thead>
+                            <tbody>{tableRows.slice(0, 20).map((row, idx) => <tr key={idx} className="border-t border-[#2d2d2d]">{tableHeaders.map(h => <td key={h} className="px-2 py-1 text-gray-300 font-mono truncate max-w-[150px]">{String(row[h] ?? '')}</td>)}</tr>)}</tbody>
+                          </table>
+                        </div>
+                      </div>
+                      {chartData.length > 0 && (
+                        <div>
+                          <h4 className="text-white font-medium mb-2">Chart</h4>
+                          <div className="bg-[#1e1e1e] p-3 rounded border border-[#3d3d3d] flex items-end gap-1 h-32">
+                            {chartData.map((d, i) => {
+                              const max = Math.max(...chartData.map(x => x.value), 1);
+                              const h = (d.value / max) * 100;
+                              return <div key={i} className="flex-1 flex flex-col items-center gap-1"><div className="w-full bg-[#ff6b35] rounded-t" style={{ height: `${h}%`, minHeight: '4px' }} title={`${d.label}: ${d.value}`} /><span className="text-[10px] text-gray-500 truncate w-full text-center">{d.label.slice(0, 8)}</span></div>;
+                            })}
+                          </div>
+                        </div>
+                      )}
+                      <div>
+                        <h4 className="text-white font-medium mb-2">JSON Tree</h4>
+                        <pre className="p-3 bg-[#1e1e1e] rounded border border-[#3d3d3d] overflow-auto max-h-[200px] text-xs font-mono text-gray-200">{JSON.stringify(parsed, null, 2)}</pre>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-4">
+                      {[
+                        { title: 'JSON Tree', description: response.contentType.includes('json') ? 'Parsed JSON shown below' : 'Response is not JSON' },
+                        { title: 'Table View', description: isJsonArray ? 'Array detected' : 'Requires JSON array of objects' },
+                        { title: 'Chart', description: isJsonArray && chartData.length ? 'Bar chart of numeric field' : 'Requires numeric array' },
+                        { title: 'HTML Preview', description: response.contentType.includes('html') ? 'See Preview tab' : 'Requires HTML response' },
+                      ].map(({ title, description }) => (
+                        <div key={title} className="p-4 bg-[#1e1e1e] rounded-lg border border-[#3d3d3d] text-left">
+                          <h4 className="text-white font-medium mb-1">{title}</h4>
+                          <p className="text-gray-500 text-sm">{description}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {response.contentType.includes('json') && !isJsonArray && (
+                    <pre className="p-3 bg-[#1e1e1e] rounded border border-[#3d3d3d] overflow-auto max-h-[300px] text-xs font-mono text-gray-200">{tryParseJson(response.body)}</pre>
+                  )}
+                </div>
+              );
+            })()}
           </TabPanel>
         )}
 

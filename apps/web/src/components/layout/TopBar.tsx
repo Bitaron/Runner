@@ -15,7 +15,8 @@ import {
   Zap,
   LogOut,
   User,
-  Check
+  Check,
+  Cookie
 } from 'lucide-react';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAuthStore } from '@/stores/authStore';
@@ -27,6 +28,7 @@ interface TopBarProps {
   onTeamOpen: () => void;
   onSettingsOpen: () => void;
   onNewRequest: () => void;
+  onCookieOpen?: () => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
@@ -34,6 +36,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   onTeamOpen,
   onSettingsOpen,
   onNewRequest,
+  onCookieOpen,
 }) => {
   const [showWorkspaces, setShowWorkspaces] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -141,6 +144,14 @@ export const TopBar: React.FC<TopBarProps> = ({
 
         {/* Right section */}
         <div className="flex items-center gap-1 shrink-0">
+          <button
+            onClick={onCookieOpen}
+            aria-label="Cookie manager"
+            className="p-2 text-gray-400 hover:text-white hover:bg-[#3d3d3d] rounded transition-colors"
+            title="Cookie Jar"
+          >
+            <Cookie className="w-4 h-4" aria-hidden="true" />
+          </button>
           <button
             onClick={onTeamOpen}
             aria-label="Invite team members"

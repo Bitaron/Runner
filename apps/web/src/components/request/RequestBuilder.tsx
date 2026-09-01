@@ -16,7 +16,8 @@ import type { ApiRequest, HttpMethod, RequestBodyMode, RequestBody, AuthConfig, 
 import { HTTP_METHOD_COLORS } from '@/lib/methodColors';
 import { CodeGenModal } from './CodeGenModal';
 import { VariableHighlighter } from '../environment/VariableTooltip';
-import { getEffectiveVariables } from '@/lib/inheritance';
+import { RequestDocsEditor } from '../docs/DocumentationEditor';
+import { getEffectiveAuth, getEffectiveVariables, interpolateVariables } from '@/lib/inheritance';
 
 const HTTP_METHODS: { value: HttpMethod; label: string }[] = [
   { value: 'GET', label: 'GET' },
@@ -35,9 +36,11 @@ const BODY_MODES: { value: RequestBodyMode; label: string }[] = [
   { value: 'raw', label: 'Raw' },
   { value: 'binary', label: 'Binary' },
   { value: 'graphql', label: 'GraphQL' },
+  { value: 'grpc', label: 'gRPC' },
 ];
 
-const AUTH_TYPES: { value: AuthType; label: string }[] = [
+const AUTH_TYPES: { value: AuthType | 'inherit'; label: string }[] = [
+  { value: 'inherit', label: 'Inherit auth from parent' },
   { value: 'none', label: 'No Auth' },
   { value: 'bearer', label: 'Bearer Token' },
   { value: 'basic', label: 'Basic Auth' },
@@ -75,6 +78,9 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
   const [hideUrlVarSuggestions, setHideUrlVarSuggestions] = useState(false);
   const [activeUrlVarIndex, setActiveUrlVarIndex] = useState(0);
   const [rawJsonError, setRawJsonError] = useState<string | null>(null);
+  const [graphqlSchema, setGraphqlSchema] = useState<unknown>(null);
+  const [isIntrospecting, setIsIntrospecting] = useState(false);
+  const [introspectError, setIntrospectError] = useState<string | null>(null);
   const saveMenuRef = useRef<HTMLDivElement>(null);
   const sendControlsRef = useRef<HTMLDivElement>(null);
   const { getInterpolatedValue, currentEnvironment, globalVariables } = useWorkspaceStore();
@@ -132,6 +138,7 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
     { id: 'auth', label: 'Auth' },
     { id: 'script', label: 'Script' },
     { id: 'tests', label: 'Tests' },
+    { id: 'docs', label: 'Docs' },
   ];
 
   const handleChange = (field: keyof ApiRequest, value: unknown) => {
@@ -143,7 +150,9 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
   };
 
   const handleBodyChange = (mode: RequestBodyMode) => {
-    const body = { ...request.body, mode };
+    const body: RequestBody = { ...request.body, mode } as RequestBody;
+    if (mode === 'grpc' && !body.grpc) body.grpc = { service: '', method: '', message: '{\n  \n}', metadata: [] };
+    if (mode === 'graphql' && !body.graphql) body.graphql = { query: '', variables: '' };
     handleChange('body', body);
   };
 
@@ -156,22 +165,52 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
     handleChange('auth', auth);
   };
 
+  const handleIntrospect = async () => {
+    if (!request.url.trim()) { setIntrospectError('Enter GraphQL endpoint URL first'); return; }
+    setIsIntrospecting(true);
+    setIntrospectError(null);
+    try {
+      const introspectionQuery = `query IntrospectionQuery { __schema { queryType { name } mutationType { name } subscriptionType { name } types { kind name description fields(includeDeprecated:false){ name description type { kind name ofType { kind name ofType { kind name } } } } } } }`;
+      // Use execute proxy to avoid CORS
+      const payload = {
+        method: 'POST',
+        url: request.url,
+        headers: [{ key: 'Content-Type', value: 'application/json' }],
+        params: request.params.filter(p => !p.disabled),
+        body: { mode: 'raw' as const, raw: JSON.stringify({ query: introspectionQuery }), rawType: 'json' as const },
+        timeout: 10000,
+      };
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/api/execute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json();
+      const data = json.data || json;
+      const body = typeof data.body === 'string' ? (() => { try { return JSON.parse(data.body); } catch { return data.body; } })() : data.body;
+      if (body && body.data && body.data.__schema) {
+        setGraphqlSchema(body.data.__schema);
+        toast.success('Schema fetched');
+      } else if (body && body.errors) {
+        setIntrospectError(JSON.stringify(body.errors, null, 2));
+      } else {
+        setGraphqlSchema(body);
+      }
+    } catch (e) {
+      setIntrospectError(e instanceof Error ? e.message : 'Introspection failed');
+    } finally {
+      setIsIntrospecting(false);
+    }
+  };
+
   const interpolateUrl = () => {
-    // Use full interpolation including collection/folder variables for display
+    // Use shared helper for correct precedence (globals < collection < env)
     const collectionVars = getEffectiveVariables(collection, folder);
     const envVars = [
       ...globalVariables.filter((v) => v.enabled),
       ...(currentEnvironment?.variables.filter((v) => v.enabled) || []),
     ];
-    let result = request.url;
-    const allVars = [...collectionVars, ...envVars];
-    for (const v of allVars) {
-      if (v.enabled) {
-        const escapedKey = v.key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        result = result.replace(new RegExp(`\\{\\{${escapedKey}\\}\\}`, 'g'), v.value);
-      }
-    }
-    // Fallback to store's interpolator for any remaining (keeps env/global precedence)
+    const result = interpolateVariables(request.url, collectionVars, envVars);
     if (result === request.url) return getInterpolatedValue(request.url);
     return result;
   };
@@ -491,6 +530,27 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
               valuePlaceholder="Value"
               variables={getVariablesForHighlighter().map(v => ({ key: v.key, value: v.value, type: 'default' as const, enabled: true }))}
             />
+            <div className="flex flex-wrap gap-1 mt-3">
+              <span className="text-xs text-gray-500 mr-1">Presets:</span>
+              {[
+                { k: 'Accept', v: 'application/json' },
+                { k: 'Content-Type', v: 'application/json' },
+                { k: 'Authorization', v: 'Bearer ' },
+                { k: 'Cache-Control', v: 'no-cache' },
+                { k: 'Accept-Language', v: 'en-US' },
+              ].map(p => (
+                <button
+                  key={p.k}
+                  onClick={() => {
+                    if (request.headers.some(h => h.key.toLowerCase() === p.k.toLowerCase())) return;
+                    handleKeyValueChange('headers', [...request.headers, { key: p.k, value: p.v }]);
+                  }}
+                  className="px-2 py-1 text-xs bg-[#2d2d2d] hover:bg-[#3d3d3d] text-gray-300 rounded border border-[#3d3d3d]"
+                >
+                  {p.k}
+                </button>
+              ))}
+            </div>
           </TabPanel>
         )}
 
@@ -571,6 +631,13 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
 
             {request.body.mode === 'graphql' && (
               <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Button variant="secondary" size="sm" onClick={handleIntrospect} disabled={isIntrospecting}>
+                    {isIntrospecting ? 'Introspecting...' : 'Fetch Schema'}
+                  </Button>
+                  {graphqlSchema ? <span className="text-xs text-green-400">Schema loaded</span> : null}
+                  {introspectError ? <span className="text-xs text-red-400 truncate max-w-[200px]">{introspectError}</span> : null}
+                </div>
                 <textarea
                   value={request.body.graphql?.query || ''}
                   onChange={(e) => handleBodyContentChange({ graphql: { ...request.body.graphql, query: e.target.value } })}
@@ -583,6 +650,23 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
                   placeholder='{ "variable": "value" }'
                   className="w-full h-24 p-3 bg-[#1e1e1e] border border-[#3d3d3d] rounded-md font-mono text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-[#ff6b35] resize-none"
                 />
+                {graphqlSchema ? (
+                  <div className="bg-[#1e1e1e] border border-[#3d3d3d] rounded p-3 max-h-48 overflow-auto">
+                    <div className="text-xs font-semibold text-gray-400 mb-1">Schema types</div>
+                    <div className="flex flex-wrap gap-1">
+                      {(() => {
+                        const s = graphqlSchema as Record<string, unknown>;
+                        const types = (s.types as Array<{ name: string; kind: string }>) || (s as unknown as Array<{ name: string }>) || [];
+                        const list = Array.isArray(types) ? types : [];
+                        return list.slice(0, 30).map((t) => {
+                          const name = (t as Record<string, unknown>).name as string;
+                          return <span key={name} className="px-2 py-0.5 text-xs bg-[#2d2d2d] text-gray-300 rounded">{name}</span>;
+                        });
+                      })()}
+                    </div>
+                    <pre className="text-xs font-mono text-gray-500 mt-2 whitespace-pre-wrap break-all">{JSON.stringify(graphqlSchema, null, 2).slice(0, 2000)}</pre>
+                  </div>
+                ) : null}
               </div>
             )}
 
@@ -611,20 +695,59 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
                 </label>
               </div>
             )}
+
+            {request.body.mode === 'grpc' && (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <Input label="Service" value={request.body.grpc?.service || ''} onChange={(e) => handleBodyContentChange({ grpc: { ...(request.body.grpc || { service: '', method: '', message: '' }), service: e.target.value } })} placeholder="e.g. helloworld.Greeter" />
+                  <Input label="Method" value={request.body.grpc?.method || ''} onChange={(e) => handleBodyContentChange({ grpc: { ...(request.body.grpc || { service: '', method: '', message: '' }), method: e.target.value } })} placeholder="e.g. SayHello" />
+                </div>
+                <Input label="Server URL" value={request.body.grpc?.serverUrl || request.url || ''} onChange={(e) => handleBodyContentChange({ grpc: { ...(request.body.grpc || { service: '', method: '', message: '' }), serverUrl: e.target.value } })} placeholder="grpc://localhost:50051" />
+                <div>
+                  <label className="text-xs text-gray-400 mb-1 block">Message (JSON)</label>
+                  <textarea value={request.body.grpc?.message || ''} onChange={(e) => handleBodyContentChange({ grpc: { ...(request.body.grpc || { service: '', method: '', message: '' }), message: e.target.value } })} placeholder='{ "name": "world" }' className="w-full h-32 p-3 bg-[#1e1e1e] border border-[#3d3d3d] rounded-md font-mono text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-[#ff6b35] resize-none" />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 mb-1 block">Metadata</label>
+                  <KeyValueEditor items={request.body.grpc?.metadata || []} onChange={(items) => handleBodyContentChange({ grpc: { ...(request.body.grpc || { service: '', method: '', message: '' }), metadata: items } })} keyPlaceholder="Key" valuePlaceholder="Value" showDescription={false} />
+                </div>
+                <p className="text-xs text-amber-400 bg-amber-400/10 border border-amber-400/20 rounded p-2">gRPC unary call — server execution is stubbed. Configure server URL, service/method and JSON message; Send will return a mocked response until native gRPC proxy is enabled.</p>
+              </div>
+            )}
           </TabPanel>
         )}
 
-        {activeTab === 'auth' && (
-          <TabPanel>
-            <div className="space-y-4">
-              <Select
-                label="Auth Type"
-                value={request.auth.type}
-                onChange={(e) => handleAuthChange({ ...request.auth, type: e.target.value as AuthType })}
-                options={AUTH_TYPES}
-              />
+        {activeTab === 'auth' && (() => {
+          const isInherited = !!request.auth.inheritFromParent;
+          const effective = isInherited && collection
+            ? getEffectiveAuth(request, collection, folder)
+            : null;
+          const selectValue = isInherited ? 'inherit' : request.auth.type;
+          const handleTypeChange = (val: string) => {
+            if (val === 'inherit') {
+              handleAuthChange({ type: 'none', inheritFromParent: true } as AuthConfig);
+            } else {
+              handleAuthChange({ type: val as AuthType, inheritFromParent: false } as AuthConfig);
+            }
+          };
+          return (
+            <TabPanel>
+              <div className="space-y-4">
+                <Select
+                  label="Auth Type"
+                  value={selectValue}
+                  onChange={(e) => handleTypeChange(e.target.value)}
+                  options={AUTH_TYPES}
+                />
+                {isInherited && (
+                  <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-md text-yellow-500 text-sm">
+                    This request inherits authorization from its parent.
+                    {effective && effective.type !== 'none' ? ` Effective: ${effective.type}` : ' (parent has no auth)'}
+                    {collection ? ` — ${collection.name}${folder ? ` / ${folder.name}` : ''}` : ''}
+                  </div>
+                )}
 
-              {request.auth.type === 'bearer' && (
+                {!isInherited && request.auth.type === 'bearer' && (
                 <div className="space-y-3">
                   <Input
                     label="Token"
@@ -641,7 +764,7 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
                 </div>
               )}
 
-              {request.auth.type === 'basic' && (
+              {!isInherited && request.auth.type === 'basic' && (
                 <div className="space-y-3">
                   <Input
                     label="Username"
@@ -659,7 +782,7 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
                 </div>
               )}
 
-              {request.auth.type === 'apikey' && (
+              {!isInherited && request.auth.type === 'apikey' && (
                 <div className="space-y-3">
                   <Input
                     label="Key"
@@ -685,12 +808,13 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
                 </div>
               )}
 
-              {request.auth.type === 'none' && (
+              {!isInherited && request.auth.type === 'none' && (
                 <p className="text-gray-500 text-sm">This request does not use any authorization</p>
               )}
             </div>
           </TabPanel>
-        )}
+          );
+        })()}
 
         {activeTab === 'script' && (
           <TabPanel>
@@ -775,6 +899,15 @@ pm.test('Response has data', function() {
                 className="w-full h-40 p-3 bg-[#1e1e1e] border border-[#3d3d3d] rounded-md font-mono text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-[#ff6b35] resize-none"
               />
             </div>
+          </TabPanel>
+        )}
+
+        {activeTab === 'docs' && (
+          <TabPanel>
+            <RequestDocsEditor
+              documentation={request.description || ''}
+              onDocumentationChange={(val) => handleChange('description', val)}
+            />
           </TabPanel>
         )}
       </div>

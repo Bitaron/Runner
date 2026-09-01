@@ -6,13 +6,14 @@ import type { Collection, ApiRequest } from '@apiforge/shared';
 const router = Router();
 
 interface SearchResult {
-  type: 'collection' | 'request' | 'folder';
+  type: 'collection' | 'request' | 'folder' | 'environment' | 'history';
   id: string;
   name: string;
   url?: string;
   collectionId?: string;
   collectionName?: string;
   method?: string;
+  workspaceId?: string;
 }
 
 router.get('/', authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
@@ -149,6 +150,39 @@ router.get('/', authMiddleware, async (req: AuthenticatedRequest, res: Response)
       for (const collection of collections) {
         searchFolders(collection.folders, collection.name, collection._id);
       }
+    }
+
+    // ── Environment search (name, variables) ──
+    if (!type || type === 'environment' || type === 'all') {
+      try {
+        const envView = await db.view('app', 'by_type', { key: 'environment', include_docs: true });
+        const envs = envView.rows.map(r => r.doc as unknown as { _id: string; name: string; workspaceId?: string; variables?: Array<{ key: string; value: string }>; deletedAt?: string }).filter(e => !e.deletedAt);
+        for (const env of envs) {
+          if (workspaceId && env.workspaceId !== workspaceId) continue;
+          if (env.name.toLowerCase().includes(searchQuery)) {
+            results.push({ type: 'environment', id: env._id, name: env.name, workspaceId: env.workspaceId });
+          } else if (env.variables?.some(v => v.key.toLowerCase().includes(searchQuery) || v.value.toLowerCase().includes(searchQuery))) {
+            const match = env.variables.find(v => v.key.toLowerCase().includes(searchQuery) || v.value.toLowerCase().includes(searchQuery));
+            results.push({ type: 'environment', id: env._id, name: `${env.name} (var: ${match?.key})`, workspaceId: env.workspaceId });
+          }
+        }
+      } catch {}
+    }
+
+    // ── History search (request name/url/method) ──
+    if (!type || type === 'history' || type === 'all') {
+      try {
+        const histView = await db.view('app', 'by_user', { key: req.user!.userId, include_docs: true });
+        const entries = histView.rows.map(r => r.doc as unknown as { _id: string; type: string; workspaceId?: string; request?: { name: string; url: string; method: string } }).filter(h => h.type === 'history');
+        for (const h of entries) {
+          if (workspaceId && h.workspaceId !== workspaceId) continue;
+          const reqDoc = h.request;
+          if (!reqDoc) continue;
+          if (reqDoc.name.toLowerCase().includes(searchQuery) || reqDoc.url.toLowerCase().includes(searchQuery) || reqDoc.method.toLowerCase().includes(searchQuery)) {
+            results.push({ type: 'history', id: h._id, name: `${reqDoc.method} ${reqDoc.name || reqDoc.url}`, url: reqDoc.url, method: reqDoc.method, workspaceId: h.workspaceId });
+          }
+        }
+      } catch {}
     }
 
     res.json({

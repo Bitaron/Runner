@@ -12,6 +12,7 @@ import path from 'path';
 import dotenv from 'dotenv';
 import { initDatabase } from './config/database';
 import { initSyncWebSocket } from './websocket';
+import { initWsProxy } from './websocket/wsProxy';
 import authRoutes from './routes/auth';
 import userRoutes from './routes/users';
 import workspaceRoutes from './routes/workspaces';
@@ -24,6 +25,11 @@ import executeRoutes from './routes/execute';
 import importExportRoutes from './routes/importExport';
 import uploadRoutes from './routes/upload';
 import searchRoutes from './routes/search';
+import trashRoutes from './routes/trash';
+import mockRoutes from './routes/mocks';
+import monitorRoutes from './routes/monitors';
+import auditRoutes from './routes/audit';
+import publishRoutes from './routes/publish';
 import { optionalAuth, AuthenticatedRequest } from './middleware/auth';
 
 dotenv.config({ path: path.join(__dirname, '../../.env') });
@@ -84,6 +90,11 @@ app.use('/api/execute', executeRoutes);
 app.use('/api/import', importExportRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/search', searchRoutes);
+app.use('/api/trash', trashRoutes);
+app.use('/api/mocks', mockRoutes);
+app.use('/api/monitors', monitorRoutes);
+app.use('/api/audit', auditRoutes);
+app.use('/api/publish', publishRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ success: true, message: 'API is running' });
@@ -127,6 +138,8 @@ const startServer = async () => {
 
     initSyncWebSocket(server);
     console.log('Sync WebSocket server initialized');
+    initWsProxy(server);
+    console.log('WS proxy initialized');
   } catch (error) {
     console.error('Failed to start server:', error);
     process.exit(1);

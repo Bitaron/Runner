@@ -280,115 +280,498 @@ curl -s http://localhost:4000/api/execute -H 'Content-Type: application/json' -d
 
 ## 🏭 Production Deployment
 
-### 1. Build & Env (`production`)
+> **Pick one path:**
+> - **A. Docker Compose (recommended)** — one command brings up `nginx → web:3000 + api:4000 + couchdb:5984` with volumes & restarts. See §7.
+> - **B. Manual bare-metal / VM** — install CouchDB natively, build & run API and Web separately behind Nginx/systemd/PM2. See §3–6 + §8.
+>
+> Both paths require the same `.env` secrets and `CORS_ORIGIN`. `NEXT_PUBLIC_*` vars are **baked at `next build` time** — rebuild Web after changing them.
 
-On the **prod host** (VM, bare metal, or CI):
+### 1. Production Prerequisites
+
+On the **prod host** (Ubuntu 22.04/24.04, Debian 12, or any Linux VM):
+
+```bash
+node -v   # >=18, recommended 20 LTS
+npm -v    # >=9
+git --version
+curl -V
+nginx -v  # for manual path; not needed for Docker
+
+# optional for Docker path
+docker -v || podman -v
+docker compose version || podman-compose --version
+lsof -v   # used by start.sh health checks
+```
+
+Open firewall ports:
+
+```bash
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+# do NOT expose 5984 or 4000 publicly — only via nginx/loopback
+sudo ufw status
+```
+
+### 2. Environment Variables (`production`)
+
+From repo root, create a production `.env` (never commit this):
 
 ```bash
 cp .env.example .env
-# PROD .env — set strong secrets, real origins, couch internal DNS
-cat > .env <<'EOF'
+chmod 600 .env
+# generate strong secrets
+openssl rand -hex 32  # → JWT_SECRET
+openssl rand -hex 32  # → JWT_REFRESH_SECRET
+```
+
+Edit `.env` — **required in prod**:
+
+```env
 NODE_ENV=production
 PORT=4000
-JWT_SECRET=$(openssl rand -hex 32)
-JWT_REFRESH_SECRET=$(openssl rand -hex 32)
-COUCHDB_URL=http://couchdb:5984              # inside docker network; fallback admin/password via compose
+JWT_SECRET=<paste 64-hex from openssl rand -hex 32>
+JWT_REFRESH_SECRET=<paste different 64-hex>
+COUCHDB_URL=http://admin:<strong-password>@127.0.0.1:5984
 COUCHDB_DATABASE=apiforge
 COUCHDB_ADMIN_USER=admin
 COUCHDB_ADMIN_PASSWORD=<strong-password>
 CORS_ORIGIN=https://your-domain.com,https://api.your-domain.com
+# FRONTEND — browser-facing URLs (must be public, not docker DNS)
 NEXT_PUBLIC_API_URL=https://your-domain.com
 NEXT_PUBLIC_WS_URL=wss://your-domain.com/ws
-# optional TLS (enables https.createServer)
+# optional: direct TLS in Node (prefer TLS at nginx)
 # HTTPS_KEY_FILE=/etc/nginx/ssl/key.pem
 # HTTPS_CERT_FILE=/etc/nginx/ssl/cert.pem
-EOF
-chmod 600 .env
+WEB_URL=https://your-domain.com
 ```
 
-**Note on `Issues.md:108/11` postponed:** `JWT_SECRET` fallback `your-super-secret…` and global rate-limiter `1000/15m` are dev defaults — in prod `CORS_ORIGIN` **must** be set and secrets must be `32+` hex; rate-limiter now uses `keyGenerator: ip:userId` per-user.
+> **Docker Compose override:** `docker/docker-compose.yml:47` sets `COUCHDB_URL=http://couchdb:5984` for inter-container DNS, and `web` uses `NEXT_PUBLIC_API_URL=http://api:4000` internally — nginx still exposes `https://your-domain.com`. For manual deploys, keep the `127.0.0.1` URL above.
+>
+> **Security notes:** In prod `CORS_ORIGIN` **must** be set (fallback blocks all — `apps/api/src/index.ts:40`), `JWT_SECRET` must be 32+ hex (dev fallback is `your-super-secret…`), rate-limit is `1000/15min` per `ip:userId` (`keyGenerator` at `apps/api/src/index.ts:70`).
 
-### 2. Docker Compose (recommended)
+### 3. CouchDB — Install & Secure (Prod)
+
+CouchDB stores `user|team|workspace|collection|request|environment|history|trash|revoked_token`. DB `apiforge` is auto-created on `initDatabase()` (`apps/api/src/config/database.ts:11`) with views `by_type`, `by_workspace`, etc. Pick **one** method.
+
+#### Option A — Docker (simplest, works for prod too)
+
+```bash
+docker run -d --name apiforge-couchdb \
+  --restart unless-stopped \
+  -p 127.0.0.1:5984:5984 \
+  -e COUCHDB_USER=admin \
+  -e COUCHDB_PASSWORD=<strong-password> \
+  -v couchdb-data:/opt/couchdb/data \
+  couchdb:3
+
+# verify (loopback only)
+curl -s http://admin:<strong-password>@127.0.0.1:5984/ | jq .vendor
+curl -s http://admin:<strong-password>@127.0.0.1:5984/_all_dbs | jq
+
+# persist across reboots: already --restart unless-stopped + volume
+docker ps --format '{{.Names}} {{.Status}}'
+```
+
+> For Docker Compose, skip this — `couchdb` service in `docker/docker-compose.yml:61` does it for you.
+
+#### Option B — Native on Ubuntu/Debian (recommended for bare-metal)
+
+```bash
+sudo apt update && sudo apt install -y curl apt-transport-https gnupg
+
+# Add CouchDB repo (Ubuntu 22.04/24.04)
+curl https://couchdb.apache.org/repo/keys.asc | gpg --dearmor | sudo tee /usr/share/keyrings/couchdb-archive-keyring.gpg >/dev/null
+source /etc/os-release
+echo "deb [signed-by=/usr/share/keyrings/couchdb-archive-keyring.gpg] https://apache.jfrog.io/artifactory/couchdb-deb/ ${VERSION_CODENAME} main" \
+  | sudo tee /etc/apt/sources.list.d/couchdb.list >/dev/null
+
+sudo apt update
+# choose: standalone, bind 127.0.0.1, set admin password when prompted
+sudo apt install -y couchdb
+
+# enable + bind loopback (or 0.0.0.0 behind firewall + nginx)
+sudo sed -i 's/^bind_address = .*/bind_address = 127.0.0.1/' /opt/couchdb/etc/local.ini
+sudo systemctl enable --now couchdb
+sudo systemctl status couchdb --no-pager
+
+# verify
+curl -s http://admin:<strong-password>@127.0.0.1:5984/ | jq
+curl -s http://admin:<strong-password>@127.0.0.1:5984/_all_dbs | jq
+```
+
+#### Option C — Native on macOS (dev/prod parity test)
+
+```bash
+brew install couchdb
+brew services start couchdb
+# set admin via Fauxton http://127.0.0.1:5984/_utils → Setup single node admin/<password>
+curl -s http://admin:<strong-password>@127.0.0.1:5984/ | jq
+```
+
+#### Verify & Harden (all options)
+
+```bash
+# should return 200 with couchdb vendor, not 401 admin party
+curl -s http://127.0.0.1:5984/ | jq        # 401 if auth required (good)
+curl -s http://admin:<strong-password>@127.0.0.1:5984/ | jq .couchdb
+
+# list DBs — empty before first API start, then contains 'apiforge'
+curl -s http://admin:<strong-password>@127.0.0.1:5984/_all_dbs | jq
+
+# after API has run once, query a type (Mango)
+curl -s http://admin:<strong-password>@127.0.0.1:5984/apiforge/_find \
+  -H 'Content-Type: application/json' \
+  -d '{"selector":{"type":"collection"},"limit":1}' | jq
+
+# check bind address is not 0.0.0.0 publicly
+sudo ss -tlnp | grep 5984   # should be 127.0.0.1:5984 if not docker-published
+
+# Fauxton UI (local only — do not expose publicly)
+# open http://127.0.0.1:5984/_utils
+```
+
+**Troubleshooting CouchDB prod:**
+- `curl (7) Failed to connect` → `sudo systemctl status couchdb`, `journalctl -u couchdb`, `lsof -Pi :5984`, check `COUCHDB_USER/PASSWORD` matches `.env`
+- `404 apiforge` before first API start is normal — `initDatabase()` creates it; after `node dist/index.js` it becomes `200`
+- `arm64` (M1/Graviton) use `couchdb:3` (multi-arch)
+- Backups: see §10
+
+### 4. Backend (API) — Build & Run in Prod
+
+`apps/api` is Express 4 + `nano` + `ws` + `jsonwebtoken`. Build is `tsc` → `apps/api/dist/index.js`.
+
+```bash
+# from repo root
+npm ci                              # clean install all workspaces
+npm run build:shared                # build @apiforge/shared types first
+npm run build:api                   # tsc → apps/api/dist
+npx tsc -p apps/api/tsconfig.json --noEmit  # typecheck
+
+# smoke test (foreground)
+NODE_ENV=production PORT=4000 node apps/api/dist/index.js
+# → Database initialized
+# → Server running on port 4000
+# → Sync WebSocket server initialized
+curl -s http://127.0.0.1:4000/api/health | jq  # {"success":true}
+
+# verify CouchDB doc lands
+TOKEN=$(curl -s http://127.0.0.1:4000/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"admin@example.com","password":"Pass12345"}' | jq -r .data.accessToken)
+# (or register first via /api/auth/register)
+```
+
+**Run with PM2 (recommended manual prod):**
+
+```bash
+sudo npm i -g pm2
+pm2 start apps/api/dist/index.js --name apiforge-api --update-env -- \
+  --env production
+pm2 save
+pm2 startup systemd  # follow printed command
+pm2 logs apiforge-api
+pm2 restart apiforge-api --update-env
+```
+
+**Run with systemd:**
+
+```ini
+# /etc/systemd/system/apiforge-api.service
+[Unit]
+Description=APIForge API
+After=network.target couchdb.service
+Requires=couchdb.service
+
+[Service]
+Type=simple
+User=apiforge
+WorkingDirectory=/opt/apiforge
+Environment=NODE_ENV=production
+EnvironmentFile=/opt/apiforge/.env
+ExecStart=/usr/bin/node /opt/apiforge/apps/api/dist/index.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now apiforge-api
+sudo systemctl status apiforge-api --no-pager
+journalctl -u apiforge-api -f
+```
+
+> **Uploads:** `POST /api/upload` writes to `apps/api/uploads` (also `docker-compose` volume `uploads` at `docker/docker-compose.yml:54`). Ensure `uploads/` is writable and persisted, or mount S3/EBs volume.
+
+### 5. Frontend (Web) — Build & Run in Prod
+
+`apps/web` is Next.js 14 App Router (output `standalone` at `apps/web/next.config.js:5`) + Tailwind + Zustand. `NEXT_PUBLIC_*` are **inlined at build** — rebuild after any URL change.
+
+```bash
+# from repo root — env must be set BEFORE build
+cat .env | grep NEXT_PUBLIC
+# NEXT_PUBLIC_API_URL=https://your-domain.com
+# NEXT_PUBLIC_WS_URL=wss://your-domain.com/ws
+
+npm ci
+npm run build:shared
+npm run build:web                # next build → .next/standalone + .next/static
+npx tsc -p apps/web/tsconfig.json --noEmit
+
+# option 1: next start (simplest)
+PORT=3000 NODE_ENV=production npm run start --workspace=@apiforge/web
+# → http://127.0.0.1:3000
+curl -s http://127.0.0.1:3000/ | head -n 20
+
+# option 2: standalone server (smaller image, used by Dockerfile.web)
+node apps/web/.next/standalone/server.js
+# or: node apps/web/.next/standalone/apps/web/server.js (depending on workspace hoist)
+# Dockerfile.web copies .next/standalone → /app and runs node server.js on 3000
+
+# verify browser → API
+curl -s http://127.0.0.1:3000/api/health | jq  # via nginx in prod, direct 4000 otherwise
+```
+
+**PM2:**
+
+```bash
+pm2 start npm --name apiforge-web --update-env -- run start --workspace=@apiforge/web
+pm2 save
+pm2 logs apiforge-web
+```
+
+**systemd:**
+
+```ini
+# /etc/systemd/system/apiforge-web.service
+[Unit]
+Description=APIForge Web
+After=network.target apiforge-api.service
+
+[Service]
+Type=simple
+User=apiforge
+WorkingDirectory=/opt/apiforge
+Environment=NODE_ENV=production
+Environment=PORT=3000
+EnvironmentFile=/opt/apiforge/.env
+ExecStart=/usr/bin/npm run start --workspace=@apiforge/web
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+> **Important:** If you change `NEXT_PUBLIC_API_URL` or `NEXT_PUBLIC_WS_URL`, run `npm run build:web` again and restart `apiforge-web`. The browser bundle (`apps/web/src/lib/api.ts:5`) reads `process.env.NEXT_PUBLIC_API_URL` at compile time, with fallback `http://localhost:4000`.
+
+### 6. Reverse Proxy & TLS (Nginx — Manual Path)
+
+`docker/nginx.conf` already proxies `/ → web:3000`, `/api → api:4000`, `/ws → api` (Upgrade). For manual installs, use this as template.
+
+```nginx
+# /etc/nginx/sites-available/apiforge
+upstream web { server 127.0.0.1:3000; }
+upstream api { server 127.0.0.1:4000; }
+
+server {
+  listen 80;
+  server_name your-domain.com;
+  return 301 https://$host$request_uri;
+}
+
+server {
+  listen 443 ssl http2;
+  server_name your-domain.com;
+
+  ssl_certificate /etc/letsencrypt/live/your-domain.com/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/your-domain.com/privkey.pem;
+
+  client_max_body_size 50M;
+
+  location / {
+    proxy_pass http://web;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection 'upgrade';
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+  location /api {
+    proxy_pass http://api;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+  location /ws {
+    proxy_pass http://api;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+  }
+}
+```
+
+```bash
+# Let's Encrypt (Ubuntu)
+sudo apt install -y certbot python3-certbot-nginx
+sudo certbot --nginx -d your-domain.com
+sudo nginx -t && sudo systemctl reload nginx
+
+# alternative: copy existing certs for Docker path
+mkdir -p docker/ssl
+cp /etc/letsencrypt/live/your-domain.com/fullchain.pem docker/ssl/cert.pem
+cp /etc/letsencrypt/live/your-domain.com/privkey.pem docker/ssl/key.pem
+# docker-compose mounts ./ssl:/etc/nginx/ssl:ro and api can use HTTPS_KEY_FILE/CERT_FILE
+
+sudo systemctl enable --now nginx
+curl -s https://your-domain.com/api/health | jq
+```
+
+> Client `NEXT_PUBLIC_WS_URL` **must** be `wss://your-domain.com/ws` when TLS; `ws://` will be blocked by browsers on HTTPS pages.
+
+### 7. Option A — Docker Compose (All-in-One, Recommended)
 
 `docker/docker-compose.yml` runs `nginx → web:3000 + api:4000 + couchdb:5984` on `apiforge-network`, volumes `couchdb-data` + `uploads`, `restart: unless-stopped`.
 
 ```bash
 # from repo root
-npm install          # for shared build (or rely on Docker multi-stage)
-npm run build:shared
+npm ci
+npm run build:shared   # optional — Docker multi-stage builds anyway
 
 cd docker
+# set secrets in ../.env first (see §2), then:
 docker compose up -d --build   # or: podman-compose up -d --build
-# legacy
-# docker-compose up -d --build
+# legacy: docker-compose up -d --build
 
 # wait & verify
-curl -4 -s http://localhost:5984/ | grep couchdb  # inside host
-curl -s http://localhost/api/health | jq          # via nginx → api
-curl -s http://localhost/ | head -n 20            # via nginx → web
 docker compose ps
 docker compose logs -f api web couchdb
+curl -4 -s http://127.0.0.1:5984/ | grep -i couchdb  # couch container
+curl -s http://localhost/api/health | jq           # via nginx → api
+curl -s http://localhost/ | head -n 20             # via nginx → web
 ```
 
-**Compose env note:** `docker-compose.yml` sets for `api` `COUCHDB_URL=http://couchdb:5984` (service DNS) overriding `.env` for inter-container traffic; `web` gets `NEXT_PUBLIC_API_URL=http://api:4000` internally but `nginx` exposes `http://localhost`.
-
-### 3. Via `start.sh` (Docker mode on prod with Podman)
+Via `start.sh` (uses Podman on prod if available):
 
 ```bash
 ./start.sh -d   # podman-compose up -d, waits http://localhost/api/health 60s
-# access http://localhost  (or https if nginx ssl mounted)
-# stop
+# access http://localhost (or https if ssl mounted)
 podman-compose -f docker/docker-compose.yml down
-# or: ./start.sh --help
+./start.sh --help
 ```
 
-### 4. Nginx & TLS
+### 8. Option B — Manual Bare-Metal Without Docker
 
-`docker/nginx.conf` proxies `/ → web:3000`, `/api → api:4000`, `/ws → api` (Upgrade). For prod TLS:
-
-```bash
-mkdir -p docker/ssl
-# bring your certs
-cp /etc/letsencrypt/.../fullchain.pem docker/ssl/cert.pem
-cp /etc/letsencrypt/.../privkey.pem docker/ssl/key.pem
-
-# compose already mounts ./ssl:/etc/nginx/ssl:ro
-# optionally set HTTPS_KEY_FILE/HTTPS_CERT_FILE env for Node https.createServer (api/src/index.ts:113)
-
-# reload
-docker compose restart nginx
-curl -k https://localhost/api/health | jq
-```
-
-Client `NEXT_PUBLIC_WS_URL` must be `wss://your-domain.com/ws` when TLS.
-
-### 5. Health Checks & Logs (prod)
+Use §3 (CouchDB native) + §4 (API via PM2/systemd) + §5 (Web) + §6 (Nginx). Full sequence on a fresh VM:
 
 ```bash
-# all
+# 1) clone & deps
+git clone <repository-url> /opt/apiforge && cd /opt/apiforge
+npm ci
+
+# 2) env
+cp .env.example .env && chmod 600 .env
+# edit .env with real secrets/URLs (see §2)
+nano .env
+
+# 3) CouchDB native (see §3 Option B)
+sudo apt install -y couchdb && sudo systemctl enable --now couchdb
+curl -s http://admin:<strong-password>@127.0.0.1:5984/ | jq
+
+# 4) build
+npm run build:shared && npm run build:api && npm run build:web
+
+# 5) run
+pm2 start apps/api/dist/index.js --name apiforge-api --update-env
+PORT=3000 pm2 start npm --name apiforge-web -- run start --workspace=@apiforge/web
+pm2 save && pm2 startup systemd
+
+# 6) nginx + TLS (see §6)
+sudo apt install -y nginx certbot python3-certbot-nginx
+sudo cp docker/nginx.conf /etc/nginx/nginx.conf  # or template from §6
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot --nginx -d your-domain.com
+
+# 7) verify
 curl -s https://your-domain.com/api/health | jq
+curl -s https://your-domain.com/ | head -n 20
+```
+
+### 9. Verify Production
+
+```bash
+# API health (direct & via nginx)
+curl -s http://127.0.0.1:4000/api/health | jq  # {"success":true,"message":"API is running"}
+curl -s https://your-domain.com/api/health | jq
+
+# Web
+curl -s https://your-domain.com/ | head -n 20
 curl -s https://your-domain.com/_next/static/chunks/webpack.js | head
 
-# CouchDB (inside network)
-docker exec apiforge-db curl -s http://admin:password@localhost:5984/_all_dbs | jq
-docker volume inspect apiforge-network_couchdb-data
+# CouchDB (loopback only)
+curl -s http://admin:<strong-password>@127.0.0.1:5984/_all_dbs | jq
+docker exec apiforge-db curl -s http://admin:password@localhost:5984/_all_dbs | jq  # docker path
 
-# logs
-docker compose logs -f --tail 100 api
-docker compose logs -f --tail 100 web
-docker compose logs -f couchdb | grep -i error
+# E2E: register + create collection (lands in CouchDB)
+curl -s https://your-domain.com/api/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Prod User","email":"prod@example.com","password":"Pass12345"}' | jq .data.user._id
+TOKEN=$(curl -s https://your-domain.com/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"prod@example.com","password":"Pass12345"}' | jq -r .data.accessToken)
+WS=$(curl -s https://your-domain.com/api/workspaces -H "Authorization: Bearer $TOKEN" | jq -r .data[0]._id)
+curl -s https://your-domain.com/api/collections \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d "{\"name\":\"ProdColl\",\"workspaceId\":\"$WS\"}" | jq
+curl -s http://admin:<strong-password>@127.0.0.1:5984/apiforge/_find \
+  -H 'Content-Type: application/json' \
+  -d '{"selector":{"type":"collection","name":"ProdColl"}}' | jq .docs[0]._id
 
-# backup CouchDB
-curl -s http://admin:password@127.0.0.1:5984/apiforge/_all_docs?include_docs=true | jq > backup-$(date +%F).json
+# WebSocket
+curl -i -N -H "Connection: Upgrade" -H "Upgrade: websocket" \
+  https://your-domain.com/ws  # 426/101 expected
 ```
 
-### 6. Zero-downtime update
+### 10. Operations — Logs, Backups, Updates
 
 ```bash
+# logs (manual PM2/systemd)
+pm2 logs apiforge-api --lines 100
+pm2 logs apiforge-web --lines 100
+journalctl -u apiforge-api -f
+journalctl -u couchdb -f
+
+# logs (Docker)
+docker compose -f docker/docker-compose.yml logs -f --tail 100 api
+docker compose -f docker/docker-compose.yml logs -f --tail 100 web
+docker compose -f docker/docker-compose.yml logs -f couchdb | grep -i error
+docker volume inspect couchdb-data  # or: docker volume inspect apiforge-network_couchdb-data
+
+# backups — CouchDB dump (run via cron)
+curl -s http://admin:<strong-password>@127.0.0.1:5984/apiforge/_all_docs?include_docs=true \
+  | jq > backup-$(date +%F).json
+# restore
+curl -s -X POST http://admin:<strong-password>@127.0.0.1:5984/apiforge/_bulk_docs \
+  -H 'Content-Type: application/json' -d @backup-2026-01-01.json | jq
+
+# zero-downtime update (Docker)
 git pull
-docker compose build api web
-docker compose up -d --no-deps api web
-docker compose exec api npm run build --workspace=@apiforge/shared  # if hot patch
+docker compose -f docker/docker-compose.yml build api web
+docker compose -f docker/docker-compose.yml up -d --no-deps api web
+
+# zero-downtime update (Manual)
+git pull
+npm ci && npm run build:shared && npm run build:api && npm run build:web
+pm2 reload apiforge-api --update-env
+pm2 reload apiforge-web --update-env
+sudo nginx -t && sudo systemctl reload nginx
 ```
 
 ---

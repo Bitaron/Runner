@@ -2,7 +2,10 @@ import { Router, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { createDocument, getDocument, updateDocument, getDb } from '../config/database';
 import { authMiddleware, AuthenticatedRequest } from '../middleware/auth';
+import { requireWriteAccess } from '../middleware/rbac';
 import { broadcastSyncEvent } from '../websocket';
+import { encryptVariables, decryptVariables } from '../services/vault';
+import { logAudit } from '../services/audit';
 import type { Environment, TrashItem, Variable } from '@apiforge/shared';
 
 const router = Router();
@@ -30,7 +33,8 @@ router.get('/', authMiddleware, async (req: AuthenticatedRequest, res: Response)
 
     let environments = result.rows
       .map((row) => row.doc as Environment)
-      .filter((e) => !e.deletedAt);
+      .filter((e) => !e.deletedAt)
+      .map(e => ({ ...e, variables: decryptVariables(e.variables || []) }));
     
     if (workspaceId) {
       environments = environments.filter((e) => e.workspaceId === workspaceId);
@@ -42,9 +46,9 @@ router.get('/', authMiddleware, async (req: AuthenticatedRequest, res: Response)
   }
 });
 
-router.post('/', authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+router.post('/', authMiddleware, requireWriteAccess, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const { name, workspaceId, variables, isGlobal } = req.body;
+    const { name, workspaceId, variables, isGlobal, collectionId, forkedFrom } = req.body;
 
     if (!name) {
       res.status(400).json({ success: false, error: 'Name is required' });
@@ -65,15 +69,18 @@ router.post('/', authMiddleware, async (req: AuthenticatedRequest, res: Response
       _id: `env:${uuidv4()}`,
       type: 'environment',
       workspaceId,
+      collectionId,
       name,
-      variables: variables || [],
+      variables: encryptVariables(variables || []),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       isGlobal: isGlobal || false,
+      forkedFrom,
     };
 
     await createDocument(environment);
-    res.status(201).json({ success: true, data: environment });
+    await logAudit({ userId: req.user!.userId, userEmail: req.user!.email, action: 'environment.create', entityType: 'environment', entityId: environment._id, workspaceId, details: { name } });
+    res.status(201).json({ success: true, data: { ...environment, variables: decryptVariables(environment.variables) } });
   } catch (error) {
     res.status(500).json({ success: false, error: 'Failed to create environment' });
   }
@@ -88,13 +95,13 @@ router.get('/:id', authMiddleware, async (req: AuthenticatedRequest, res: Respon
       return;
     }
 
-    res.json({ success: true, data: environment });
+    res.json({ success: true, data: { ...environment, variables: decryptVariables(environment.variables || []) } });
   } catch (error) {
     res.status(500).json({ success: false, error: 'Failed to get environment' });
   }
 });
 
-router.patch('/:id', authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+router.patch('/:id', authMiddleware, requireWriteAccess, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const existing = await getDocument<Environment>(req.params.id);
 
@@ -112,16 +119,17 @@ router.patch('/:id', authMiddleware, async (req: AuthenticatedRequest, res: Resp
     }
     
     if (name !== undefined) updates.name = name;
-    if (variables !== undefined) updates.variables = variables;
+    if (variables !== undefined) updates.variables = encryptVariables(variables);
 
     const updated = await updateDocument<Environment>(req.params.id, updates);
-    res.json({ success: true, data: updated });
+    await logAudit({ userId: req.user!.userId, userEmail: req.user!.email, action: 'environment.update', entityType: 'environment', entityId: req.params.id, workspaceId: existing.workspaceId, details: { name } });
+    res.json({ success: true, data: updated ? { ...updated, variables: decryptVariables(updated.variables || []) } : updated });
   } catch (error) {
     res.status(500).json({ success: false, error: 'Failed to update environment' });
   }
 });
 
-router.delete('/:id', authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+router.delete('/:id', authMiddleware, requireWriteAccess, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     if (!req.user) {
       res.status(401).json({ success: false, error: 'Unauthorized' });
@@ -200,6 +208,32 @@ router.post('/:id/restore', authMiddleware, async (req: AuthenticatedRequest, re
     res.json({ success: true, data: updated });
   } catch (error) {
     res.status(500).json({ success: false, error: 'Failed to restore environment' });
+  }
+});
+
+router.post('/:id/fork', authMiddleware, requireWriteAccess, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user) { res.status(401).json({ success: false, error: 'Unauthorized' }); return; }
+    const env = await getDocument<Environment>(req.params.id);
+    if (!env || env.deletedAt) { res.status(404).json({ success: false, error: 'Environment not found' }); return; }
+    const { name, workspaceId, collectionId } = req.body as { name?: string; workspaceId?: string; collectionId?: string };
+    const fork: Environment = {
+      _id: `env:${uuidv4()}`,
+      type: 'environment',
+      workspaceId: workspaceId || env.workspaceId,
+      collectionId: collectionId || env.collectionId,
+      name: name || `${env.name} (fork)`,
+      variables: [...env.variables],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      isGlobal: false,
+      forkedFrom: env._id,
+    };
+    const created = await createDocument(fork);
+    await broadcastSyncEvent(req.user.userId, fork.workspaceId, { type: 'create', entityType: 'environment', entityId: created._id, data: created, workspaceId: fork.workspaceId });
+    res.status(201).json({ success: true, data: created });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to fork environment' });
   }
 });
 

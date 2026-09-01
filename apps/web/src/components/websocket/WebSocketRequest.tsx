@@ -38,9 +38,34 @@ export const WebSocketRequest: React.FC<WebSocketRequestProps> = ({ initialUrl =
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [messageInput, setMessageInput] = useState('');
   const [activeTab, setActiveTab] = useState('messages');
+  const [useProxy, setUseProxy] = useState(false);
   
   const wsRef = useRef<WebSocket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const getWsProxyUrl = useCallback(() => {
+    const rawWs = process.env.NEXT_PUBLIC_WS_URL || '';
+    if (rawWs) {
+      // replace /ws with /ws-proxy, handle ws://host:4000/ws or ws://host/ws-proxy
+      if (rawWs.includes('/ws')) return rawWs.replace(/\/ws\/?$/, '/ws-proxy');
+      return rawWs.replace(/\/$/, '') + '/ws-proxy';
+    }
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || '';
+    if (apiUrl) {
+      try {
+        const u = new URL(apiUrl);
+        u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
+        u.pathname = '/ws-proxy';
+        u.search = '';
+        return u.toString().replace(/\/$/, '');
+      } catch {}
+    }
+    if (typeof window !== 'undefined') {
+      const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      return `${proto}//${window.location.host}/ws-proxy`;
+    }
+    return 'ws://localhost:4000/ws-proxy';
+  }, []);
 
   const addLog = useCallback((type: LogEntry['type'], message: string, data?: unknown) => {
     setLogs((prev) => [
@@ -78,25 +103,69 @@ export const WebSocketRequest: React.FC<WebSocketRequestProps> = ({ initialUrl =
     }
 
     setIsConnecting(true);
-    addLog('info', `Connecting to ${url}...`);
+    const hasHeaders = headers.some(h => !h.disabled && h.key.trim() && h.value.trim());
+    const shouldProxy = hasHeaders;
+    setUseProxy(shouldProxy);
+    if (shouldProxy) {
+      addLog('info', `Connecting via proxy to ${url} with ${headers.filter(h=>!h.disabled&&h.key).length} header(s)...`);
+    } else {
+      addLog('info', `Connecting to ${url}...`);
+    }
 
     try {
       const wsProtocols = protocols.trim() ? protocols.split(',').map((p) => p.trim()) : undefined;
-      const ws = new WebSocket(url, wsProtocols);
+      let ws: WebSocket;
+      let isProxyConnection = false;
+      if (shouldProxy) {
+        const proxyUrl = getWsProxyUrl();
+        ws = new WebSocket(proxyUrl);
+        isProxyConnection = true;
+      } else {
+        ws = new WebSocket(url, wsProtocols);
+      }
 
       ws.onopen = () => {
-        setIsConnected(true);
-        setIsConnecting(false);
-        addLog('info', 'Connection established');
+        if (isProxyConnection) {
+          const headerRecord: Record<string, string> = {};
+          headers.filter(h => !h.disabled && h.key.trim()).forEach(h => { headerRecord[h.key.trim()] = h.value; });
+          const connectMsg = JSON.stringify({ type: 'connect', target: url, protocols: wsProtocols, headers: headerRecord });
+          ws.send(connectMsg);
+          addLog('info', 'Proxy connected, requesting target connection...');
+        } else {
+          setIsConnected(true);
+          setIsConnecting(false);
+          addLog('info', 'Connection established');
+        }
       };
 
       ws.onmessage = (event) => {
-        let data = event.data;
+        let data: unknown = event.data;
+        let isProxyMeta = false;
         try {
-          data = JSON.parse(event.data);
+          const parsed = JSON.parse(event.data);
+          if (parsed && typeof parsed === 'object' && 'type' in parsed && ['open','error','close'].includes((parsed as Record<string, unknown>).type as string)) {
+            isProxyMeta = true;
+            const p = parsed as Record<string, unknown>;
+            if (p.type === 'open') {
+              setIsConnected(true);
+              setIsConnecting(false);
+              addLog('info', `Proxied connection established to ${p.target as string}`);
+              return;
+            }
+            if (p.type === 'error') {
+              addLog('error', String(p.error));
+              return;
+            }
+            if (p.type === 'close') {
+              addLog('info', `Target closed (code: ${String(p.code)}) ${String(p.reason || '')}`);
+              return;
+            }
+          }
+          if (!isProxyMeta) data = parsed;
         } catch {
           // Keep as string
         }
+        if (isProxyMeta) return;
 
         const message: WebSocketMessage = {
           type: 'message',
@@ -116,7 +185,7 @@ export const WebSocketRequest: React.FC<WebSocketRequestProps> = ({ initialUrl =
       ws.onclose = (event) => {
         setIsConnected(false);
         setIsConnecting(false);
-        addLog('info', `Connection closed (code: ${event.code})`);
+        addLog('info', `Connection closed (code: ${event.code})${event.reason ? ` ${event.reason}` : ''}`);
       };
 
       wsRef.current = ws;
@@ -124,7 +193,7 @@ export const WebSocketRequest: React.FC<WebSocketRequestProps> = ({ initialUrl =
       setIsConnecting(false);
       addLog('error', `Failed to connect: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
-  }, [url, protocols, addLog]);
+  }, [url, protocols, headers, addLog, getWsProxyUrl]);
 
   const disconnect = useCallback(() => {
     if (wsRef.current) {
@@ -292,6 +361,9 @@ export const WebSocketRequest: React.FC<WebSocketRequestProps> = ({ initialUrl =
 
         {activeTab === 'headers' && (
           <TabPanel>
+            <div className="px-3 py-2 bg-[#1e1e1e] border-b border-[#3d3d3d] text-xs text-gray-400">
+              Headers are sent via server proxy (supports custom auth). Without headers a direct browser WebSocket is used.
+            </div>
             <KeyValueEditor
               items={headers}
               onChange={setHeaders}
@@ -343,6 +415,7 @@ export const WebSocketRequest: React.FC<WebSocketRequestProps> = ({ initialUrl =
         <div className="flex items-center gap-4 text-xs text-gray-500">
           <span>{messages.length} messages</span>
           <span>{logs.filter((l) => l.type === 'error').length} errors</span>
+          {isConnected && useProxy && <span className="text-[#ff6b35]">via proxy</span>}
         </div>
         <Button variant="ghost" size="sm" onClick={clearMessages}>
           <Trash2 className="w-4 h-4 mr-1" />

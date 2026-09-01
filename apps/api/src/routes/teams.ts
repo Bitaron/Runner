@@ -182,7 +182,7 @@ router.post('/:id/members', authMiddleware, async (req: AuthenticatedRequest, re
       return;
     }
 
-    if (!['admin', 'member'].includes(role)) {
+    if (!['admin', 'member', 'viewer'].includes(role)) {
       res.status(400).json({ success: false, error: 'Invalid role' });
       return;
     }
@@ -214,7 +214,7 @@ router.post('/:id/members', authMiddleware, async (req: AuthenticatedRequest, re
       userId: user._id,
       email: user.email,
       name: user.name,
-      role: role as 'admin' | 'member',
+      role: role as Team['members'][number]['role'],
       joinedAt: new Date().toISOString(),
     };
 
@@ -229,7 +229,7 @@ router.post('/:id/members', authMiddleware, async (req: AuthenticatedRequest, re
       to: user.email,
       teamName: team.name,
       inviterEmail: req.user!.email,
-      role: role as 'admin' | 'member',
+      role: role as 'admin' | 'member' | 'viewer',
     }).catch((error) => console.error('Failed to send invite email:', error));
 
     res.json({ success: true, data: updated });
@@ -315,12 +315,12 @@ router.patch('/:id/members/:userId', authMiddleware, async (req: AuthenticatedRe
     }
 
     const { role } = req.body;
-    if (!['admin', 'member'].includes(role)) {
+    if (!['admin', 'member', 'viewer'].includes(role)) {
       res.status(400).json({ success: false, error: 'Invalid role' });
       return;
     }
 
-    team.members[memberIndex].role = role;
+    team.members[memberIndex].role = role as Team['members'][number]['role'];
     const updated = await updateDocument<Team>(req.params.id, { members: team.members });
 
     res.json({ success: true, data: updated });

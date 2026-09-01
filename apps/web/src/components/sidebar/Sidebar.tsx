@@ -47,7 +47,7 @@ interface SidebarProps {
   onSelectFolder?: (collection: Collection, folder: Folder) => void;
   onSelectEnvironment?: (environment: Environment) => void;
   onSelectGlobals?: () => void;
-  onCreateNew?: (type: 'http' | 'graphql' | 'websocket' | 'collection' | 'folder') => void;
+  onCreateNew?: (type: 'http' | 'graphql' | 'websocket' | 'grpc' | 'collection' | 'folder') => void;
   onDeleteCollection?: (collectionId: string) => void;
   onDeleteFolder?: (collectionId: string, folderId: string) => void;
   className?: string;
@@ -85,6 +85,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [expandedCollections, setExpandedCollections] = useState<Set<string>>(new Set());
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
+  const [historySearch, setHistorySearch] = useState('');
   const [showNewCollectionModal, setShowNewCollectionModal] = useState(false);
   const [showNewDropdown, setShowNewDropdown] = useState(false);
   const [newCollectionName, setNewCollectionName] = useState('');
@@ -99,7 +100,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const treeRef = useRef<HTMLDivElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
 
-  const { collections, addCollection, removeCollection } = useCollectionsStore();
+  const { collections, addCollection, removeCollection, clearHistory, removeHistoryEntry } = useCollectionsStore();
   const { history } = useCollectionsStore();
   const { environments, currentEnvironment, setCurrentEnvironment } = useWorkspaceStore();
   const { currentWorkspace } = useWorkspaceStore();
@@ -298,6 +299,86 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }
   };
 
+  const handleExportWorkspace = async () => {
+    const workspaceId = currentWorkspace?._id || '';
+    if (!workspaceId) { toast.error('No workspace selected'); return; }
+    try {
+      const [colsRes, envsRes] = await Promise.all([
+        apiClient.get<Collection[]>('/api/collections', { workspaceId }),
+        apiClient.get<Environment[]>('/api/environments', { workspaceId }),
+      ]);
+      const data = {
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        workspace: currentWorkspace,
+        collections: colsRes.success ? colsRes.data : collections,
+        environments: envsRes.success ? envsRes.data : environments,
+      };
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${(currentWorkspace?.name || 'workspace').replace(/\s+/g, '_')}_workspace.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success(`Workspace exported — ${data.collections?.length || 0} collections, ${data.environments?.length || 0} environments`);
+    } catch { toast.error('Workspace export failed'); }
+  };
+
+  const handleExportEnvironment = async (env: Environment) => {
+    try {
+      const blob = new Blob([JSON.stringify({ name: env.name, values: env.variables.map(v => ({ key: v.key, value: v.value, type: v.type, enabled: v.enabled })) }, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${env.name.replace(/\s+/g, '_')}_environment.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success(`Environment "${env.name}" exported`);
+    } catch { toast.error('Export failed'); }
+  };
+
+  const handleExportHar = async (collection: Collection) => {
+    // generate HAR from collection
+    try {
+      const har = {
+        log: {
+          version: '1.2',
+          creator: { name: 'Runner', version: '1.0.0' },
+          entries: [
+            ...collection.requests.map(r => ({
+              comment: r.name,
+              request: {
+                method: r.method,
+                url: r.url + (r.params.filter(p => !p.disabled).map(p => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value)}`).join('&') ? `?${r.params.filter(p => !p.disabled).map(p => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value)}`).join('&')}` : ''),
+                headers: r.headers.filter(h => !h.disabled).map(h => ({ name: h.key, value: h.value })),
+                queryString: r.params.filter(p => !p.disabled).map(p => ({ name: p.key, value: p.value })),
+                postData: r.body.mode !== 'none' ? { mimeType: r.body.mode === 'raw' ? (r.body.rawType === 'json' ? 'application/json' : 'text/plain') : r.body.mode === 'urlencoded' ? 'application/x-www-form-urlencoded' : 'multipart/form-data', text: r.body.raw || JSON.stringify(r.body) } : undefined,
+              },
+              response: { status: 0, statusText: '', headers: [], content: { size: 0, mimeType: 'text/plain' } },
+              startedDateTime: new Date().toISOString(),
+              time: 0,
+            })),
+          ],
+        },
+      };
+      const blob = new Blob([JSON.stringify(har, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${collection.name.replace(/\s+/g, '_')}.har`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success(`HAR exported — ${collection.requests.length} requests`);
+    } catch { toast.error('HAR export failed'); }
+  };
+
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -307,7 +388,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
     try {
       const text = await file.text();
-      const postmanData = JSON.parse(text) as Record<string, unknown>;
+      const trimmed = text.trim();
       
       const workspaceId = currentWorkspace?._id || '';
       if (!workspaceId) {
@@ -317,11 +398,201 @@ export const Sidebar: React.FC<SidebarProps> = ({
         return;
       }
 
+      // ── cURL detection (plain text starting with curl) ──
+      if (trimmed.startsWith('curl ')) {
+        const response = await apiClient.post<{ collection: Collection; request: unknown }>('/api/import/curl', {
+          curl: trimmed,
+          workspaceId,
+        });
+        if (response.success && response.data) {
+          const coll = (response.data as unknown as { collection: Collection }).collection;
+          // refresh collections from server to get the new request
+          const collectionsRes = await apiClient.get<Collection[]>('/api/collections', { workspaceId });
+          if (collectionsRes.success && collectionsRes.data) {
+            const { setCollections } = useCollectionsStore.getState();
+            // merge: keep local, add server
+            const existingIds = new Set(collectionsRes.data.map(c => c._id));
+            const merged = [...collectionsRes.data, ...collections.filter(c => !existingIds.has(c._id))];
+            // we cheat: directly set via store setter if available
+            try { (useCollectionsStore.getState() as unknown as { setCollections: (c: Collection[]) => void }).setCollections(merged); } catch {}
+            addCollection(coll);
+          } else {
+            addCollection(coll);
+          }
+          toast.success(`cURL imported to "${coll.name}"`);
+        } else {
+          setImportError(response.error || 'Failed to import cURL');
+        }
+        return;
+      }
+
+      let parsed: Record<string, unknown> | null = null;
+      let isYaml = false;
+      try {
+        parsed = JSON.parse(trimmed) as Record<string, unknown>;
+      } catch {
+        // try yaml-like detection (openapi: / swagger:)
+        if (trimmed.includes('openapi:') || trimmed.includes('swagger:')) {
+          // send raw text to server for yaml parsing
+          const response = await apiClient.post<Collection>('/api/import/openapi', {
+            specText: trimmed,
+            workspaceId,
+          });
+          if (response.success && response.data) {
+            addCollection(response.data as Collection);
+            toast.success(`OpenAPI collection "${(response.data as Collection).name}" imported`);
+          } else {
+            setImportError(response.error || 'Failed to import OpenAPI spec');
+          }
+          return;
+        }
+        setImportError('Invalid file format. Please upload a valid Postman collection, OpenAPI spec, or cURL command.');
+        return;
+      }
+      
+      if (!parsed) {
+        setImportError('Invalid file format.');
+        return;
+      }
+
+      // Detect OpenAPI (openapi: 3.x or swagger: 2.0)
+      if (typeof parsed.openapi === 'string' || typeof parsed.swagger === 'string') {
+        const response = await apiClient.post<Collection>('/api/import/openapi', {
+          spec: parsed,
+          workspaceId,
+        });
+        if (response.success && response.data) {
+          addCollection(response.data as Collection);
+          toast.success(`OpenAPI collection "${(response.data as Collection).name}" imported`);
+        } else {
+          setImportError(response.error || 'Failed to import OpenAPI spec');
+        }
+        return;
+      }
+
+      // Detect HAR (log.entries)
+      if (parsed.log && typeof parsed.log === 'object' && Array.isArray((parsed.log as Record<string, unknown>).entries)) {
+        const entries = (parsed.log as Record<string, unknown>).entries as Array<Record<string, unknown>>;
+        const harCollection: Collection = {
+          _id: `collection:${crypto.randomUUID()}`,
+          type: 'collection',
+          workspaceId,
+          name: (parsed.log as Record<string, unknown>).comment as string || 'HAR Import',
+          variables: [],
+          folders: [],
+          requests: entries.slice(0, 200).map((entry, idx) => {
+            const req = entry.request as Record<string, unknown> || {};
+            const urlStr = typeof req.url === 'string' ? req.url : '';
+            let url = urlStr;
+            let params: Array<{ key: string; value: string }> = [];
+            try {
+              const u = new URL(urlStr);
+              url = `${u.origin}${u.pathname}`;
+              params = Array.from(u.searchParams.entries()).map(([k,v]) => ({ key: k, value: v }));
+              const qs = req.queryString as Array<{ name: string; value: string }> | undefined;
+              if (qs) params.push(...qs.map(q => ({ key: q.name, value: q.value })));
+            } catch {}
+            const headers = Array.isArray(req.headers) ? (req.headers as Array<{ name: string; value: string }>).map(h => ({ key: h.name, value: h.value })) : [];
+            const postData = req.postData as Record<string, unknown> | undefined;
+            let body: Collection['requests'][number]['body'] = { mode: 'none' };
+            if (postData) {
+              const mime = postData.mimeType as string || '';
+              const text = postData.text as string || '';
+              if (mime.includes('json')) body = { mode: 'raw', raw: text, rawType: 'json' };
+              else if (mime.includes('x-www-form-urlencoded')) {
+                const pairs = (postData.params as Array<{ name: string; value: string }>) || [];
+                body = { mode: 'urlencoded', urlencoded: pairs.map(p => ({ key: p.name, value: p.value })) };
+              } else if (text) body = { mode: 'raw', raw: text, rawType: 'text' };
+            }
+            return {
+              _id: `request:${crypto.randomUUID()}`,
+              type: 'request' as const,
+              collectionId: '',
+              workspaceId,
+              name: (entry.comment as string) || `${(req.method as string) || 'GET'} ${urlStr.slice(0, 50)}`,
+              method: ((req.method as string) || 'GET').toUpperCase() as Collection['requests'][number]['method'],
+              url,
+              params,
+              headers,
+              body,
+              auth: { type: 'none' as const, inheritFromParent: true },
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              createdBy: '',
+            };
+          }),
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          createdBy: '',
+        };
+        // create on server if possible
+        const serverColl = await createCollectionOnServer({ name: harCollection.name, description: `Imported HAR with ${entries.length} entries`, variables: [], workspaceId });
+        if (serverColl) {
+          // add requests via patch
+          const updated = { ...serverColl, requests: harCollection.requests.map(r => ({ ...r, collectionId: serverColl._id })) } as Collection;
+          await apiClient.patch(`/api/collections/${serverColl._id}`, { requests: updated.requests }).catch(()=>{});
+          // reload collections
+          const cols = await apiClient.get<Collection[]>('/api/collections', { workspaceId });
+          if (cols.success && cols.data) useCollectionsStore.getState().setCollections(cols.data as Collection[]);
+          else addCollection(updated);
+          toast.success(`HAR imported — ${entries.length} requests`);
+        } else {
+          harCollection.requests = harCollection.requests.map(r => ({ ...r, collectionId: harCollection._id }));
+          addCollection(harCollection);
+          toast.success(`HAR imported locally — ${entries.length} requests`);
+        }
+        return;
+      }
+
+      // Detect Workspace dump (collections+environments)
+      if (Array.isArray((parsed as Record<string, unknown>).collections) || Array.isArray((parsed as Record<string, unknown>).environments)) {
+        const cols = (parsed as Record<string, unknown>).collections as Collection[] | undefined;
+        const envs = (parsed as Record<string, unknown>).environments as Environment[] | undefined;
+        let importedCols = 0, importedEnvs = 0;
+        if (Array.isArray(cols)) {
+          for (const c of cols) {
+            try {
+              const res = await apiClient.post<Collection>('/api/import/postman', { collection: {
+                info: { name: c.name, description: c.description, schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json' },
+                item: [...(c.requests.map((r: Collection['requests'][number]) => ({
+                  name: r.name,
+                  request: { method: r.method, url: r.url, header: r.headers, body: r.body },
+                })) as unknown[]), ...(c.folders as unknown[])],
+                variable: c.variables,
+                auth: c.auth,
+                event: [],
+              }, workspaceId });
+              if (res.success) importedCols++;
+              else {
+                // fallback local
+                addCollection({ ...c, _id: `collection:${crypto.randomUUID()}`, workspaceId });
+                importedCols++;
+              }
+            } catch { /* ignore per-collection */ }
+          }
+        }
+        if (Array.isArray(envs)) {
+          for (const e of envs) {
+            try {
+              const er = await apiClient.post<Environment>('/api/environments', { name: e.name, workspaceId, variables: e.variables });
+              if (er.success && er.data) { useWorkspaceStore.getState().addEnvironment(er.data as Environment); importedEnvs++; }
+            } catch {}
+          }
+        }
+        toast.success(`Workspace imported — ${importedCols} collections, ${importedEnvs} environments`);
+        // refresh
+        const colsRes = await apiClient.get<Collection[]>('/api/collections', { workspaceId });
+        if (colsRes.success && colsRes.data) useCollectionsStore.getState().setCollections(colsRes.data as Collection[]);
+        const envsRes = await apiClient.get<Environment[]>('/api/environments', { workspaceId });
+        if (envsRes.success && envsRes.data) useWorkspaceStore.getState().setEnvironments(envsRes.data as Environment[]);
+        return;
+      }
+
       // Detect Postman environment vs collection: environment has `values` array and no `info`
-      const isPostmanEnvironment = Array.isArray((postmanData as Record<string, unknown>).values) && typeof (postmanData as Record<string, unknown>).name === 'string' && !(postmanData as Record<string, unknown>).info;
+      const isPostmanEnvironment = Array.isArray((parsed as Record<string, unknown>).values) && typeof (parsed as Record<string, unknown>).name === 'string' && !(parsed as Record<string, unknown>).info;
 
       if (isPostmanEnvironment) {
-        const envData = postmanData as unknown as { name: string; values: Array<{ key: string; value: string; enabled?: boolean; type?: string }> };
+        const envData = parsed as unknown as { name: string; values: Array<{ key: string; value: string; enabled?: boolean; type?: string }> };
         const variables = (envData.values || []).map((v) => ({
           key: v.key,
           value: v.value ?? '',
@@ -345,7 +616,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       }
 
       const response = await apiClient.post<Collection>('/api/import/postman', {
-        collection: postmanData,
+        collection: parsed,
         workspaceId,
       });
 
@@ -356,7 +627,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         setImportError(response.error || 'Failed to import collection');
       }
     } catch (error) {
-      setImportError('Invalid file format. Please upload a valid Postman collection or environment JSON.');
+      setImportError('Invalid file format. Please upload a valid Postman collection, OpenAPI spec, environment, or cURL.');
     } finally {
       setIsImporting(false);
       e.target.value = '';
@@ -557,7 +828,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 } },
                 { id: 'addFolder', label: 'Add Folder', onClick: () => onCreateNew?.('folder') },
                 { id: 'edit', label: 'Edit', onClick: () => onSelectCollection?.(collection) },
-                { id: 'export', label: 'Export', onClick: async () => {
+                { id: 'export', label: 'Export Postman', onClick: async () => {
                   try {
                     const res = await apiClient.get(`/api/import/postman/${collection._id}`);
                     const data = (res as unknown as { data?: unknown }).data || (res as unknown as { success: boolean; data?: unknown }).data;
@@ -598,6 +869,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     } catch { toast.error('Export failed'); }
                   }
                 } },
+                { id: 'exportHar', label: 'Export HAR', onClick: () => handleExportHar(collection) },
                 { id: 'delete', label: 'Delete', danger: true, onClick: () => {
                   if (confirm(`Delete collection "${collection.name}"? This will move it to trash for 30 days.`)) {
                     onDeleteCollection?.(collection._id);
@@ -645,13 +917,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const renderCollectionsContent = () => (
     <div className="p-2">
-      <button
-        onClick={() => setShowNewCollectionModal(true)}
-        className="flex items-center gap-2 w-full px-2 py-1.5 text-sm text-gray-400 hover:text-white hover:bg-[#333334] rounded transition-colors"
-      >
-        <Plus className="w-4 h-4" />
-        New Collection
-      </button>
+      <div className="flex gap-2">
+        <button
+          onClick={() => setShowNewCollectionModal(true)}
+          className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-sm text-gray-400 hover:text-white hover:bg-[#333334] rounded transition-colors border border-[#3d3d3d]"
+        >
+          <Plus className="w-4 h-4" />
+          New
+        </button>
+        <button
+          onClick={handleExportWorkspace}
+          className="flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-gray-300 bg-[#3d3d3d] hover:bg-[#4d4d4d] rounded transition-colors"
+          title="Export all collections & environments"
+        >
+          <Download className="w-3.5 h-3.5" />
+          Export All
+        </button>
+      </div>
       {collections.length === 0 ? (
         <div className="flex flex-col items-center justify-center text-center py-10 px-4 text-gray-500">
           <FolderOpen className="w-8 h-8 mb-2 text-gray-600" />
@@ -665,30 +947,94 @@ export const Sidebar: React.FC<SidebarProps> = ({
     </div>
   );
 
-  const renderHistoryContent = () => (
-    <div className="p-2">
-      {history.length === 0 ? (
-        <div className="flex flex-col items-center justify-center text-center py-10 px-4 text-gray-500">
-          <HistoryIcon className="w-8 h-8 mb-2 text-gray-600" />
-          <p className="text-sm">No history yet</p>
-        </div>
-      ) : (
-        history.map((request, index) => (
-          <div
-            key={`${request._id}-${index}`}
-            className="flex items-center gap-2 px-2 py-1.5 hover:bg-[#333334] rounded cursor-pointer"
-            onClick={() => onSelectHistory(request)}
-          >
-            <Clock className="w-4 h-4 text-gray-500" />
-            <span className="http-method w-12 shrink-0" style={getMethodStyle(request.method)}>
-              {request.method}
-            </span>
-            <span className="flex-1 text-sm truncate">{request.name || request.url || 'Untitled'}</span>
+  const renderHistoryContent = () => {
+    const filteredWithIdx = history
+      .map((req, idx) => ({ req, idx }))
+      .filter(({ req }) => {
+        if (!historySearch.trim()) return true;
+        const q = historySearch.toLowerCase();
+        return req.name.toLowerCase().includes(q) || req.url.toLowerCase().includes(q) || req.method.toLowerCase().includes(q);
+      });
+
+    const groups: Record<string, typeof filteredWithIdx> = { Today: [], Yesterday: [], Earlier: [] };
+    const now = new Date();
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    for (const entry of filteredWithIdx) {
+      const tsRaw = (entry.req as unknown as Record<string, unknown>)._historyTimestamp as string | undefined;
+      if (!tsRaw) { groups.Earlier.push(entry); continue; }
+      const d = new Date(tsRaw);
+      if (d.toDateString() === now.toDateString()) groups.Today.push(entry);
+      else if (d.toDateString() === yesterday.toDateString()) groups.Yesterday.push(entry);
+      else groups.Earlier.push(entry);
+    }
+    const hasAny = filteredWithIdx.length > 0;
+    const orderedGroups = (['Today', 'Yesterday', 'Earlier'] as const).filter(g => groups[g].length > 0);
+
+    return (
+      <div className="p-2">
+        <div className="flex items-center gap-2 mb-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" />
+            <input
+              type="text"
+              value={historySearch}
+              onChange={(e) => setHistorySearch(e.target.value)}
+              placeholder="Search history..."
+              className="w-full pl-7 pr-2 py-1.5 bg-[#1e1e1e] border border-[#3d3d3d] rounded text-xs text-gray-200 placeholder-gray-500 focus:outline-none focus:border-[#ff6b35]"
+            />
           </div>
-        ))
-      )}
-    </div>
-  );
+          {history.length > 0 && (
+            <button
+              onClick={() => { if (confirm('Clear all history?')) clearHistory(); }}
+              title="Clear history"
+              className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-[#3d3d3d] rounded transition-colors"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+        {history.length === 0 ? (
+          <div className="flex flex-col items-center justify-center text-center py-10 px-4 text-gray-500">
+            <HistoryIcon className="w-8 h-8 mb-2 text-gray-600" />
+            <p className="text-sm">No history yet</p>
+          </div>
+        ) : !hasAny ? (
+          <p className="text-center text-gray-500 text-xs py-8">No matches for “{historySearch}”</p>
+        ) : (
+          <div className="space-y-3">
+            {orderedGroups.map(group => (
+              <div key={group}>
+                <div className="text-[10px] font-semibold tracking-wide text-gray-500 uppercase px-1 py-1">{group} · {groups[group].length}</div>
+                <div className="space-y-0.5">
+                  {groups[group].map(({ req, idx }) => (
+                    <div
+                      key={`${req._id}-${idx}`}
+                      className="group flex items-center gap-2 px-2 py-1.5 hover:bg-[#333334] rounded cursor-pointer"
+                      onClick={() => onSelectHistory(req)}
+                    >
+                      <Clock className="w-4 h-4 text-gray-500 shrink-0" />
+                      <span className="http-method w-12 shrink-0 text-xs font-bold" style={getMethodStyle(req.method)}>
+                        {req.method}
+                      </span>
+                      <span className="flex-1 text-sm truncate">{req.name || req.url || 'Untitled'}</span>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); removeHistoryEntry(req._id, idx); }}
+                        title="Delete entry"
+                        className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-400 transition-opacity"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const handleCreateEnvironment = () => {
     const newEnv: Environment = {
@@ -736,6 +1082,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
           >
             <Eye className="w-4 h-4 text-gray-400" />
             <span className="flex-1 text-sm truncate">{env.name}</span>
+            <button
+              onClick={(e) => { e.stopPropagation(); handleExportEnvironment(env); }}
+              title="Export environment"
+              className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-white transition-opacity"
+            >
+              <Download className="w-3.5 h-3.5" />
+            </button>
           </div>
         ))
       )}
@@ -917,6 +1270,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <div className="text-xs text-gray-500">Real-time connection</div>
                   </div>
                 </button>
+                <button
+                  onClick={() => {
+                    setShowNewDropdown(false);
+                    onCreateNew?.('grpc');
+                  }}
+                  className="w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-[#3d3d3d] flex items-center gap-2 transition-colors"
+                >
+                  <Zap className="w-4 h-4 text-blue-400" />
+                  <div>
+                    <div className="font-medium">gRPC</div>
+                    <div className="text-xs text-gray-500">Unary call (stub)</div>
+                  </div>
+                </button>
                 <div className="border-t border-[#3d3d3d] my-1"></div>
                 <button
                   onClick={() => {
@@ -954,9 +1320,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
             type="button"
             onClick={() => importInputRef.current?.click()}
             disabled={isImporting}
-            aria-label="Import Postman collection or environment"
+            aria-label="Import Postman, OpenAPI, or cURL"
             className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-xs font-medium text-gray-300 bg-[#3d3d3d] rounded hover:bg-[#4d4d4d] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-wait"
-            title="Import Postman collection or environment"
+            title="Import Postman, OpenAPI (JSON/YAML), or cURL"
           >
             <Download className="w-3.5 h-3.5" />
             {isImporting ? 'Importing…' : 'Import'}
@@ -964,7 +1330,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <input
             ref={importInputRef}
             type="file"
-            accept=".json"
+            accept=".json,.yaml,.yml,.txt,.sh"
             className="hidden"
             onChange={handleImport}
             disabled={isImporting}

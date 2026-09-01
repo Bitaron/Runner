@@ -13,7 +13,11 @@ import {
   Trash2,
   MoreHorizontal,
   Columns,
-  Rows
+  Rows,
+  Globe,
+  Lock,
+  Shield,
+  BookOpen
 } from 'lucide-react';
 import { syncManager } from '@/lib/syncManager';
 
@@ -22,6 +26,13 @@ interface BottomBarProps {
   onLayoutChange: (layout: 'horizontal' | 'vertical') => void;
   onHelpOpen: () => void;
   onConsoleOpen: () => void;
+  onTrashOpen?: () => void;
+  onMocksOpen?: () => void;
+  onMonitorsOpen?: () => void;
+  onVaultOpen?: () => void;
+  onAuditOpen?: () => void;
+  onPublishOpen?: () => void;
+  onCookieOpen?: () => void;
 }
 
 export const BottomBar: React.FC<BottomBarProps> = ({
@@ -29,6 +40,13 @@ export const BottomBar: React.FC<BottomBarProps> = ({
   onLayoutChange,
   onHelpOpen,
   onConsoleOpen,
+  onTrashOpen,
+  onMocksOpen,
+  onMonitorsOpen,
+  onVaultOpen,
+  onAuditOpen,
+  onPublishOpen,
+  onCookieOpen,
 }) => {
   // Subscribe reactively; reading syncManager.isConnected during render
   // alone never re-renders when the socket opens/closes.
@@ -109,54 +127,70 @@ export const BottomBar: React.FC<BottomBarProps> = ({
 
       {/* Right section */}
       <div className="flex items-center gap-1">
-        {/* Runner (non-functional) */}
+        {/* Mocks */}
         <button 
-          disabled
-          aria-disabled="true"
-          className="flex items-center gap-1.5 px-2 py-1 text-xs text-gray-400 hover:text-white hover:bg-[#3d3d3d] rounded transition-colors opacity-50 cursor-not-allowed"
-          title="Runner (coming soon)"
+          onClick={onMocksOpen}
+          className="flex items-center gap-1.5 px-2 py-1 text-xs text-gray-400 hover:text-white hover:bg-[#3d3d3d] rounded transition-colors"
+          title="Mock Servers"
+        >
+          <Globe className="w-3.5 h-3.5" />
+          <span>Mocks</span>
+        </button>
+        {/* Monitors / Runner */}
+        <button 
+          onClick={onMonitorsOpen}
+          className="flex items-center gap-1.5 px-2 py-1 text-xs text-gray-400 hover:text-white hover:bg-[#3d3d3d] rounded transition-colors"
+          title="Monitors / Runner"
         >
           <Rocket className="w-3.5 h-3.5" />
           <span>Runner</span>
         </button>
 
-        {/* Capture requests (non-functional) */}
+        {/* Cookies */}
         <button 
-          disabled
-          aria-disabled="true"
-          className="p-1.5 text-gray-400 hover:text-white hover:bg-[#3d3d3d] rounded transition-colors opacity-50 cursor-not-allowed"
-          title="Capture requests (coming soon)"
-          aria-label="Capture requests"
-        >
-          <Terminal className="w-3.5 h-3.5"  aria-hidden="true" />
-        </button>
-
-        {/* Cookies (non-functional) */}
-        <button 
-          disabled
-          aria-disabled="true"
-          className="p-1.5 text-gray-400 hover:text-white hover:bg-[#3d3d3d] rounded transition-colors opacity-50 cursor-not-allowed"
-          title="Cookies (coming soon)"
+          onClick={onCookieOpen}
+          className="p-1.5 text-gray-400 hover:text-white hover:bg-[#3d3d3d] rounded transition-colors"
+          title="Cookie Jar"
           aria-label="Cookies"
         >
           <Cookie className="w-3.5 h-3.5" />
         </button>
 
-        {/* Vault (non-functional) */}
+        {/* Vault */}
         <button 
-          disabled
-          aria-disabled="true"
-          className="p-1.5 text-gray-400 hover:text-white hover:bg-[#3d3d3d] rounded transition-colors opacity-50 cursor-not-allowed"
-          title="Vault (coming soon)"
+          onClick={onVaultOpen}
+          className="p-1.5 text-gray-400 hover:text-white hover:bg-[#3d3d3d] rounded transition-colors"
+          title="Vault (encrypted secrets)"
           aria-label="Vault"
         >
-          <MoreHorizontal className="w-3.5 h-3.5" />
+          <Lock className="w-3.5 h-3.5" />
+        </button>
+
+        {/* Audit */}
+        <button 
+          onClick={onAuditOpen}
+          className="p-1.5 text-gray-400 hover:text-white hover:bg-[#3d3d3d] rounded transition-colors"
+          title="Audit Log"
+          aria-label="Audit"
+        >
+          <Shield className="w-3.5 h-3.5" />
+        </button>
+
+        {/* Publish */}
+        <button 
+          onClick={onPublishOpen}
+          className="p-1.5 text-gray-400 hover:text-white hover:bg-[#3d3d3d] rounded transition-colors"
+          title="Publish Docs"
+          aria-label="Publish"
+        >
+          <BookOpen className="w-3.5 h-3.5" />
         </button>
 
         {/* Trash */}
         <button 
+          onClick={onTrashOpen}
           className="p-1.5 text-gray-400 hover:text-white hover:bg-[#3d3d3d] rounded transition-colors"
-          title="Trash"
+          title="Trash (30 days)"
           aria-label="Trash"
         >
           <Trash2 className="w-3.5 h-3.5" />

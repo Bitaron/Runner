@@ -1,6 +1,6 @@
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS';
 
-export type RequestBodyMode = 'none' | 'formdata' | 'urlencoded' | 'raw' | 'binary' | 'graphql';
+export type RequestBodyMode = 'none' | 'formdata' | 'urlencoded' | 'raw' | 'binary' | 'graphql' | 'grpc';
 
 export type AuthType = 'none' | 'bearer' | 'basic' | 'apikey' | 'oauth1' | 'oauth2' | 'hawk' | 'awsv4' | 'digest' | 'ntlm' | 'akamai';
 
@@ -31,6 +31,13 @@ export interface RequestBody {
     variables?: string;
   };
   binary?: string;
+  grpc?: {
+    service: string;
+    method: string;
+    message: string;
+    metadata?: KeyValue[];
+    serverUrl?: string;
+  };
 }
 
 export interface OAuth1Config {
@@ -150,6 +157,7 @@ export interface ApiRequest {
   folderId?: string;
   workspaceId: string;
   name: string;
+  description?: string;
   method: HttpMethod;
   url: string;
   params: KeyValue[];
@@ -191,21 +199,36 @@ export interface Collection {
   testScript?: string;
   folders: Folder[];
   requests: ApiRequest[];
+  forkedFrom?: string;
+  version?: number;
   createdAt: string;
   updatedAt: string;
   createdBy: string;
   deletedAt?: string;
 }
 
+export interface CollectionVersion {
+  _id: string;
+  type: 'collection_version';
+  collectionId: string;
+  version: number;
+  data: Collection;
+  createdAt: string;
+  createdBy: string;
+  comment?: string;
+}
+
 export interface Environment {
   _id: string;
   type: 'environment';
   workspaceId: string;
+  collectionId?: string;
   name: string;
   variables: Variable[];
   createdAt: string;
   updatedAt: string;
   isGlobal: boolean;
+  forkedFrom?: string;
   deletedAt?: string | null;
 }
 
@@ -224,7 +247,7 @@ export interface TeamMember {
   userId: string;
   email: string;
   name: string;
-  role: 'owner' | 'admin' | 'member';
+  role: 'owner' | 'admin' | 'member' | 'viewer';
   joinedAt: string;
 }
 
@@ -296,6 +319,37 @@ export interface WebSocketMessage {
   timestamp: number;
 }
 
+export interface MockServer {
+  _id: string;
+  type: 'mock';
+  workspaceId: string;
+  collectionId: string;
+  name: string;
+  url: string;
+  delay?: number;
+  statusCode?: number;
+  headers?: KeyValue[];
+  body?: string;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+}
+
+export interface Monitor {
+  _id: string;
+  type: 'monitor';
+  workspaceId: string;
+  collectionId: string;
+  environmentId?: string;
+  name: string;
+  schedule: string; // cron expression or interval
+  lastRun?: string;
+  nextRun?: string;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+}
+
 export interface WebSocketRequest {
   _id: string;
   type: 'websocket';
@@ -311,4 +365,32 @@ export interface WebSocketRequest {
   createdBy: string;
 }
 
-export type CouchDocument = User | Team | Workspace | Collection | ApiRequest | Environment | HistoryEntry | TrashItem | WebSocketRequest | RevokedToken;
+export interface AuditEntry {
+  _id: string;
+  type: 'audit';
+  workspaceId?: string;
+  collectionId?: string;
+  environmentId?: string;
+  teamId?: string;
+  userId: string;
+  userEmail?: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  timestamp: string;
+  details?: Record<string, unknown>;
+}
+
+export interface PublishedDoc {
+  _id: string;
+  type: 'published_doc';
+  collectionId: string;
+  workspaceId: string;
+  slug: string;
+  isPublic: boolean;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+}
+
+export type CouchDocument = User | Team | Workspace | Collection | ApiRequest | Environment | HistoryEntry | TrashItem | WebSocketRequest | MockServer | Monitor | CollectionVersion | AuditEntry | PublishedDoc | RevokedToken;

@@ -16,6 +16,7 @@
   "dependencies": {
     "@apiforge/shared": "*",
     "@monaco-editor/react": "^4.7.0",
+    "handlebars": "^4.7.8",
     "@tanstack/react-query": "^5.17.0",
     "ajv": "^8.12.0",
     "axios": "^1.6.5",

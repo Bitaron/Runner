@@ -16,13 +16,21 @@ import { HelpModal } from '@/components/layout/HelpModal';
 import { CollectionFolderViewer } from '@/components/layout/CollectionFolderViewer';
 import { CollectionPanel } from '@/components/collection';
 import { EnvironmentPanel } from '@/components/environment';
+import { TrashModal } from '@/components/trash/TrashModal';
+import { MockManager } from '@/components/mocks/MockManager';
+import { MonitorManager } from '@/components/monitors/MonitorManager';
+import { VaultManager } from '@/components/vault/VaultManager';
+import { AuditViewer } from '@/components/audit/AuditViewer';
+import { PublishManager } from '@/components/publish/PublishManager';
 import { useCollectionsStore } from '@/stores/collectionsStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAuthStore } from '@/stores/authStore';
+import { useCookieStore } from '@/stores/cookieStore';
+import { CookieManager } from '@/components/cookies';
 import { apiClient } from '@/lib/api';
 import { syncManager } from '@/lib/syncManager';
 import { canSyncToServer, createRequestOnServer, createFolderOnServer } from '@/lib/persistence';
-import { getEffectiveVariables, interpolateVariables } from '@/lib/inheritance';
+import { getEffectiveAuth, getEffectiveScripts, getEffectiveVariables, interpolateVariables } from '@/lib/inheritance';
 import { cn } from '@/lib/utils';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import type { ApiRequest, Collection, Response, Workspace, Folder, Environment } from '@apiforge/shared';
@@ -61,6 +69,7 @@ export default function WorkspacePage() {
   const [isLoading, setIsLoading] = useState(false);
   const [consoleLogs, setConsoleLogs] = useState<string[]>([]);
   const [testResults, setTestResults] = useState<Array<{ name: string; passed: boolean; error?: string }>>([]);
+  const [visualizerHtml, setVisualizerHtml] = useState<string | null>(null);
   const [showTeamModal, setShowTeamModal] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -80,6 +89,13 @@ export default function WorkspacePage() {
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [showConsole, setShowConsole] = useState(false);
+  const [showCookieManager, setShowCookieManager] = useState(false);
+  const [showTrash, setShowTrash] = useState(false);
+  const [showMocks, setShowMocks] = useState(false);
+  const [showMonitors, setShowMonitors] = useState(false);
+  const [showVault, setShowVault] = useState(false);
+  const [showAudit, setShowAudit] = useState(false);
+  const [showPublish, setShowPublish] = useState(false);
   const [appLogs, setAppLogs] = useState<string[]>([]);
 
   const isMobile = useMediaQuery('(max-width: 767px)');
@@ -328,7 +344,7 @@ export default function WorkspacePage() {
     toast.success('New request created');
   }, [user, currentWorkspace, createNewRequest, selectedCollection]);
 
-  const handleCreateNew = useCallback((type: 'http' | 'graphql' | 'websocket' | 'collection' | 'folder') => {
+  const handleCreateNew = useCallback((type: 'http' | 'graphql' | 'websocket' | 'grpc' | 'collection' | 'folder') => {
     if (type === 'http') {
       handleNewRequest();
     } else if (type === 'graphql') {
@@ -339,6 +355,13 @@ export default function WorkspacePage() {
     } else if (type === 'websocket') {
       setActivePanel('websocket');
       toast.info('WebSocket panel opened');
+    } else if (type === 'grpc') {
+      handleNewRequest({
+        method: 'POST',
+        url: 'grpc://localhost:50051',
+        body: { mode: 'grpc', grpc: { service: '', method: '', message: '{\n  \n}', metadata: [] } },
+      });
+      setActivePanel('http');
     } else if (type === 'collection') {
       // This is handled by the modal in Sidebar
     } else if (type === 'folder') {
@@ -356,6 +379,7 @@ export default function WorkspacePage() {
               requests: [],
               folders: [],
               variables: [],
+              auth: { type: 'none', inheritFromParent: true },
               createdAt: new Date().toISOString(),
               updatedAt: new Date().toISOString(),
             };
@@ -386,6 +410,7 @@ export default function WorkspacePage() {
     setResponse(null);
     setConsoleLogs([]);
     setTestResults([]);
+    setVisualizerHtml(null);
   }, []);
 
   const handleTabClose = useCallback((tabId: string) => {
@@ -411,6 +436,7 @@ export default function WorkspacePage() {
     setResponse(null);
     setConsoleLogs([]);
     setTestResults([]);
+    setVisualizerHtml(null);
     setActivePanel('http');
   }, [tabs]);
 
@@ -430,6 +456,7 @@ export default function WorkspacePage() {
     setResponse(null);
     setConsoleLogs([]);
     setTestResults([]);
+    setVisualizerHtml(null);
     setActivePanel('http');
   }, [tabs]);
 
@@ -490,11 +517,73 @@ export default function WorkspacePage() {
 
     const pm = {
       request: context.request,
-      response: context.response,
-      sendRequest: (req: ApiRequest, callback: (err: Error | null, res: Response | null) => void) => {
-        apiClient.post<Response>('/api/execute', req)
+      response: context.response ? {
+        ...context.response,
+        json: () => { try { return JSON.parse(context.response!.body); } catch { return null; } },
+        text: () => context.response!.body,
+        code: context.response.status,
+        status: context.response.statusText,
+        responseTime: context.response.time,
+        headers: {
+          get: (name: string) => {
+            const found = Object.entries(context.response!.headers).find(([k]) => k.toLowerCase() === name.toLowerCase());
+            return found ? found[1] : undefined;
+          },
+          toObject: () => ({ ...context.response!.headers }),
+        },
+      } as unknown as Response & { json: () => unknown; text: () => string; code: number; status: string; responseTime: number; headers: { get: (n: string) => string | undefined; toObject: () => Record<string,string> } } : undefined,
+      sendRequest: (req: unknown, callback: (err: Error | null, res: Response | null) => void) => {
+        const payload = typeof req === 'string' ? { method: 'GET', url: req, headers: [], params: [], body: { mode: 'none' } } : req as ApiRequest;
+        apiClient.post<Response>('/api/execute', payload)
           .then((res) => callback(null, res.data || null))
           .catch((err) => callback(err, null));
+      },
+      visualizer: {
+        set: (template: string, data: unknown) => {
+          try {
+            let html = template;
+            try {
+              // eslint-disable-next-line @typescript-eslint/no-require-imports
+              const Handlebars = require('handlebars');
+              html = Handlebars.compile(template)(data);
+            } catch {
+              // fallback simple {{key}} interpolation
+              if (data && typeof data === 'object') {
+                for (const [k, v] of Object.entries(data as Record<string, unknown>)) {
+                  const val = typeof v === 'string' ? v : JSON.stringify(v);
+                  html = html.split(`{{${k}}}`).join(val);
+                  html = html.split(`{{ ${k} }}`).join(val);
+                }
+              }
+            }
+            setVisualizerHtml(html);
+          } catch (e) {
+            logs.push(`Visualizer Error: ${e instanceof Error ? e.message : String(e)}`);
+          }
+        },
+      },
+      variables: {
+        get: (key: string) => {
+          const env = useWorkspaceStore.getState().currentEnvironment;
+          const coll = useCollectionsStore.getState().currentCollection;
+          return env?.variables.find(v => v.key === key)?.value
+            ?? coll?.variables.find(v => v.key === key)?.value
+            ?? useWorkspaceStore.getState().globalVariables.find(v => v.key === key)?.value;
+        },
+        set: (key: string, value: string) => {
+          const env = useWorkspaceStore.getState().currentEnvironment;
+          if (env) {
+            const variables = [...env.variables];
+            const idx = variables.findIndex(v => v.key === key);
+            if (idx >= 0) variables[idx] = { ...variables[idx], value };
+            else variables.push({ key, value, type: 'default', enabled: true });
+            useWorkspaceStore.getState().updateEnvironment(env._id, { variables });
+          }
+        },
+      },
+      info: {
+        requestName: context.request.name,
+        requestId: context.request._id,
       },
       environment: {
         get: (key: string) => {
@@ -587,29 +676,64 @@ export default function WorkspacePage() {
   }, []);
 
   const buildRequestPayload = useCallback(async (request: ApiRequest) => {
-    let effectiveRequest = request;
+    // Resolve collection/folder early for inheritance (auth, vars, scripts)
+    const { collections } = useCollectionsStore.getState();
+    let requestCollection: Collection | null = null;
+    let requestFolder: Folder | null = null;
+    if (request.collectionId) {
+      requestCollection = collections.find((c) => c._id === request.collectionId) || null;
+      if (requestCollection && request.folderId) {
+        const findFolder = (folders: Folder[]): Folder | null => {
+          for (const f of folders) {
+            if (f._id === request.folderId) return f;
+            const nested = findFolder(f.folders);
+            if (nested) return nested;
+          }
+          return null;
+        };
+        requestFolder = findFolder(requestCollection.folders);
+      }
+    }
 
-    if (request.preRequestScript) {
+    // Postman auth inheritance: request -> folder chain -> collection
+    const effectiveAuth = getEffectiveAuth(request, requestCollection, requestFolder);
+    let effectiveRequest: ApiRequest = { ...request, auth: effectiveAuth };
+
+    // Postman script order: pre-request Collection → Folder chain → Request (outer → inner)
+    const { preRequestScript: combinedPreScript } = getEffectiveScripts(
+      requestCollection,
+      requestFolder,
+      request
+    );
+    if (combinedPreScript) {
       const scriptRequest: ApiRequest = {
-        ...request,
-        headers: [...request.headers],
-        params: [...request.params],
+        ...effectiveRequest,
+        headers: [...effectiveRequest.headers],
+        params: [...effectiveRequest.params],
+        // clone body shallow; scripts can mutate body/auth/etc.
+        body: { ...effectiveRequest.body } as typeof effectiveRequest.body,
+        auth: { ...effectiveRequest.auth } as typeof effectiveRequest.auth,
       };
-      const scriptLogs = executeScript(request.preRequestScript, { request: scriptRequest });
+      const scriptLogs = executeScript(combinedPreScript, { request: scriptRequest });
       setConsoleLogs((prev) => [...prev, ...scriptLogs]);
 
       const mutableFields = ['method', 'url', 'headers', 'params', 'body', 'auth'] as const;
       const updates: Partial<ApiRequest> = {};
       mutableFields.forEach((field) => {
-        if (scriptRequest[field] !== request[field]) {
+        // Use JSON comparison for objects to detect mutations inside headers/params/body/auth
+        const before = JSON.stringify((effectiveRequest as unknown as Record<string, unknown>)[field]);
+        const after = JSON.stringify((scriptRequest as unknown as Record<string, unknown>)[field]);
+        if (before !== after) {
           (updates as Record<string, unknown>)[field] = scriptRequest[field];
         }
       });
-      effectiveRequest = { ...request, ...updates };
+      effectiveRequest = { ...effectiveRequest, ...updates };
     }
 
     const authHeaders: Record<string, string> = {};
-    if (effectiveRequest.auth.type === 'bearer' && effectiveRequest.auth.bearer) {
+    // Track apikey query location separately (needs to go into params, not headers)
+    let apiKeyQuery: { key: string; value: string } | null = null;
+    if (effectiveRequest.auth.type === 'bearer' && effectiveRequest.auth.bearer?.token) {
       const prefix = effectiveRequest.auth.bearer.prefix || 'Bearer';
       authHeaders['Authorization'] = `${prefix} ${effectiveRequest.auth.bearer.token}`;
     } else if (effectiveRequest.auth.type === 'basic' && effectiveRequest.auth.basic) {
@@ -618,6 +742,8 @@ export default function WorkspacePage() {
     } else if (effectiveRequest.auth.type === 'apikey' && effectiveRequest.auth.apikey) {
       if (effectiveRequest.auth.apikey.location === 'header') {
         authHeaders[effectiveRequest.auth.apikey.key] = effectiveRequest.auth.apikey.value;
+      } else if (effectiveRequest.auth.apikey.location === 'query') {
+        apiKeyQuery = { key: effectiveRequest.auth.apikey.key, value: effectiveRequest.auth.apikey.value };
       }
     }
 
@@ -632,7 +758,11 @@ export default function WorkspacePage() {
       : impliedContentTypes[effectiveRequest.body.mode] || '';
 
     const explicitHeaders = effectiveRequest.headers.filter((h) => !h.disabled);
-    const headers = [...explicitHeaders, ...Object.entries(authHeaders).map(([key, value]) => ({ key, value }))];
+    // Postman: explicit header wins over auto-generated auth header (case-insensitive)
+    const authHeaderEntries = Object.entries(authHeaders).filter(
+      ([k]) => !explicitHeaders.some((eh) => eh.key.trim().toLowerCase() === k.toLowerCase())
+    );
+    const headers = [...explicitHeaders, ...authHeaderEntries.map(([key, value]) => ({ key, value }))];
     if (
       bodyContentType &&
       !explicitHeaders.some((h) => h.key.trim().toLowerCase() === 'content-type')
@@ -641,38 +771,53 @@ export default function WorkspacePage() {
     }
 
     // Interpolate variables in URL, headers, params, and body (Postman {{var}} support)
-    const { currentEnvironment, globalVariables } = useWorkspaceStore.getState();
-    const { collections } = useCollectionsStore.getState();
-    // Find collection/folder for this request to get collection/folder variables
-    let requestCollection: Collection | null = null;
-    let requestFolder: Folder | null = null;
-    if (effectiveRequest.collectionId) {
-      requestCollection = collections.find((c) => c._id === effectiveRequest.collectionId) || null;
-      if (requestCollection && effectiveRequest.folderId) {
-        const findFolder = (folders: Folder[]): Folder | null => {
-          for (const f of folders) {
-            if (f._id === effectiveRequest.folderId) return f;
-            const nested = findFolder(f.folders);
-            if (nested) return nested;
-          }
-          return null;
-        };
-        requestFolder = findFolder(requestCollection.folders);
+    // Refresh from store in case script mutated workspace/collection vars (pm.environment.set, pm.collectionVariables.set)
+    const { currentEnvironment: interpEnv, globalVariables: interpGlobals } = useWorkspaceStore.getState();
+    const { collections: postScriptCollections } = useCollectionsStore.getState();
+    let interpCollection = requestCollection;
+    let interpFolder = requestFolder;
+    if (requestCollection) {
+      const fresh = postScriptCollections.find((c) => c._id === requestCollection._id);
+      if (fresh) {
+        interpCollection = fresh;
+        if (requestFolder) {
+          const findFolder = (folders: Folder[]): Folder | null => {
+            for (const f of folders) {
+              if (f._id === requestFolder._id) return f;
+              const nested = findFolder(f.folders);
+              if (nested) return nested;
+            }
+            return null;
+          };
+          interpFolder = findFolder(fresh.folders);
+        }
       }
     }
-    const collectionVars = getEffectiveVariables(requestCollection, requestFolder);
+    const collectionVars = getEffectiveVariables(interpCollection, interpFolder);
     const envVarsForInterpolation = [
-      ...globalVariables.filter((v) => v.enabled),
-      ...(currentEnvironment?.variables.filter((v) => v.enabled) || []),
+      ...interpGlobals.filter((v) => v.enabled),
+      ...(interpEnv?.variables.filter((v) => v.enabled) || []),
     ];
     const doInterpolate = (val: string) => interpolateVariables(val, collectionVars, envVarsForInterpolation);
 
     const interpolatedUrl = doInterpolate(effectiveRequest.url);
     const interpolatedHeaders = headers.map((h) => ({
       ...h,
+      key: doInterpolate(h.key),
       value: doInterpolate(h.value),
     }));
-    const interpolatedParams = effectiveRequest.params
+    // Cookie jar: auto-attach matching cookies if no explicit Cookie header
+    if (!interpolatedHeaders.some(h => h.key.trim().toLowerCase() === 'cookie')) {
+      const jarCookies = useCookieStore.getState().getCookiesForUrl(interpolatedUrl);
+      if (jarCookies.length > 0) {
+        interpolatedHeaders.push({ key: 'Cookie', value: jarCookies.map(c => `${c.name}=${c.value}`).join('; ') });
+      }
+    }
+    // Merge apiKey query (if auth type apikey query) into params post-interpolation
+    const paramsWithApiKey = apiKeyQuery
+      ? [...effectiveRequest.params, { key: apiKeyQuery.key, value: apiKeyQuery.value }]
+      : effectiveRequest.params;
+    const interpolatedParams = paramsWithApiKey
       .filter((p) => !p.disabled)
       .map((p) => ({
         ...p,
@@ -693,6 +838,9 @@ export default function WorkspacePage() {
       }
       if (b.mode === 'graphql' && b.graphql) {
         return { ...b, graphql: { query: doInterpolate(b.graphql.query), variables: b.graphql.variables ? doInterpolate(b.graphql.variables) : b.graphql.variables } };
+      }
+      if (b.mode === 'grpc' && b.grpc) {
+        return { ...b, grpc: { service: doInterpolate(b.grpc.service), method: doInterpolate(b.grpc.method), message: doInterpolate(b.grpc.message), metadata: b.grpc.metadata?.map(m => ({ ...m, key: doInterpolate(m.key), value: doInterpolate(m.value) })), serverUrl: b.grpc.serverUrl ? doInterpolate(b.grpc.serverUrl) : undefined } };
       }
       return b;
     })();
@@ -726,10 +874,33 @@ export default function WorkspacePage() {
 
       if (response.success && response.data) {
         setResponse(response.data);
+        // persist cookies to jar
+        if (response.data.cookies && response.data.cookies.length > 0) {
+          useCookieStore.getState().upsertCookiesFromResponse(response.data.cookies, request.url);
+        }
         appendAppLog(`${request.method} ${request.url} → ${response.data.status} ${response.data.statusText} (${response.data.time}ms)`);
 
-        if (request.testScript) {
-          const scriptLogs = executeScript(request.testScript, { request, response: response.data });
+        // Post-response tests: Postman runs Request → Folder → Collection (inner → outer)
+        const { collections } = useCollectionsStore.getState();
+        let testCollection: Collection | null = null;
+        let testFolder: Folder | null = null;
+        if (request.collectionId) {
+          testCollection = collections.find((c) => c._id === request.collectionId) || null;
+          if (testCollection && request.folderId) {
+            const findFolder = (folders: Folder[]): Folder | null => {
+              for (const f of folders) {
+                if (f._id === request.folderId) return f;
+                const nested = findFolder(f.folders);
+                if (nested) return nested;
+              }
+              return null;
+            };
+            testFolder = findFolder(testCollection.folders);
+          }
+        }
+        const { testScript: combinedTest } = getEffectiveScripts(testCollection, testFolder, request);
+        if (combinedTest) {
+          const scriptLogs = executeScript(combinedTest, { request, response: response.data });
           setConsoleLogs((prev) => [...prev, ...scriptLogs]);
         }
       } else {
@@ -807,6 +978,7 @@ export default function WorkspacePage() {
       setResponse(null);
       setConsoleLogs([]);
       setTestResults([]);
+      setVisualizerHtml(null);
 
       try {
         const built = await buildRequestPayload(currentRequest);
@@ -934,6 +1106,7 @@ export default function WorkspacePage() {
           onSearchOpen={() => setShowSearch(true)}
           onTeamOpen={() => setShowTeamModal(true)}
           onSettingsOpen={() => {}}
+          onCookieOpen={() => setShowCookieManager(true)}
           onNewRequest={handleNewRequest}
         />
 
@@ -1045,6 +1218,7 @@ export default function WorkspacePage() {
                     isLoading={isLoading}
                     consoleLogs={consoleLogs}
                     testResults={testResults}
+                    visualizerHtml={visualizerHtml}
                   />
                 )}
               </div>
@@ -1126,6 +1300,7 @@ export default function WorkspacePage() {
                     isLoading={isLoading}
                     consoleLogs={consoleLogs}
                     testResults={testResults}
+                    visualizerHtml={visualizerHtml}
                   />
                 )}
               </div>
@@ -1172,6 +1347,13 @@ export default function WorkspacePage() {
           onLayoutChange={setLayout}
           onHelpOpen={() => setShowHelp(true)}
           onConsoleOpen={() => setShowConsole((prev) => !prev)}
+          onTrashOpen={() => setShowTrash(true)}
+          onMocksOpen={() => setShowMocks(true)}
+          onMonitorsOpen={() => setShowMonitors(true)}
+          onVaultOpen={() => setShowVault(true)}
+          onAuditOpen={() => setShowAudit(true)}
+          onPublishOpen={() => setShowPublish(true)}
+          onCookieOpen={() => setShowCookieManager(true)}
         />
       </div>
 
@@ -1252,6 +1434,41 @@ export default function WorkspacePage() {
       <HelpModal
         isOpen={showHelp}
         onClose={() => setShowHelp(false)}
+      />
+
+      <CookieManager
+        isOpen={showCookieManager}
+        onClose={() => setShowCookieManager(false)}
+      />
+
+      <TrashModal
+        isOpen={showTrash}
+        onClose={() => setShowTrash(false)}
+      />
+
+      <MockManager
+        isOpen={showMocks}
+        onClose={() => setShowMocks(false)}
+      />
+
+      <MonitorManager
+        isOpen={showMonitors}
+        onClose={() => setShowMonitors(false)}
+      />
+
+      <VaultManager
+        isOpen={showVault}
+        onClose={() => setShowVault(false)}
+      />
+
+      <AuditViewer
+        isOpen={showAudit}
+        onClose={() => setShowAudit(false)}
+      />
+
+      <PublishManager
+        isOpen={showPublish}
+        onClose={() => setShowPublish(false)}
       />
 
       {isInitialLoading && (

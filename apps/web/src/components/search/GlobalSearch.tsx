@@ -9,16 +9,18 @@ import { apiClient } from '@/lib/api';
 import { getMethodColor } from '@/lib/methodColors';
 import { Search, FileJson, Globe, Folder, X, Loader2 } from 'lucide-react';
 import { useCollectionsStore } from '@/stores/collectionsStore';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { ApiRequest, Collection, Folder as FolderType } from '@apiforge/shared';
 
 interface SearchResult {
-  type: 'collection' | 'request' | 'folder';
+  type: 'collection' | 'request' | 'folder' | 'environment' | 'history';
   id: string;
   name: string;
   url?: string;
   collectionId?: string;
   collectionName?: string;
   method?: string;
+  workspaceId?: string;
 }
 
 interface SearchResponse {
@@ -37,7 +39,7 @@ export const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose, onS
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [searchType, setSearchType] = useState<'all' | 'request' | 'collection'>('all');
+  const [searchType, setSearchType] = useState<'all' | 'request' | 'collection' | 'environment' | 'history'>('all');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const { collections } = useCollectionsStore();
 
@@ -103,6 +105,32 @@ export const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose, onS
       if (request) {
         onSelectRequest(request, result.collectionId);
       }
+    } else if (result.type === 'environment') {
+      const env = useWorkspaceStore.getState().environments.find(e => e._id === result.id);
+      if (env) useWorkspaceStore.getState().setCurrentEnvironment(env);
+    } else if (result.type === 'history') {
+      // history selection: try to find matching request in local history or collections
+      const hist = useCollectionsStore.getState().history.find(h => h._id === result.id) as ApiRequest | undefined;
+      // fall back to server history result's url/method to create temp request
+      if (hist) onSelectRequest(hist);
+      else {
+        const temp: ApiRequest = {
+          _id: `request:${result.id}`,
+          type: 'request',
+          workspaceId: result.workspaceId || '',
+          name: result.name,
+          method: (result.method as ApiRequest['method']) || 'GET',
+          url: result.url || '',
+          params: [],
+          headers: [],
+          body: { mode: 'none' },
+          auth: { type: 'none', inheritFromParent: true },
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          createdBy: '',
+        };
+        onSelectRequest(temp);
+      }
     }
     onClose();
     setQuery('');
@@ -128,6 +156,10 @@ export const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose, onS
         return <Folder className="w-4 h-4 text-yellow-500" />;
       case 'request':
         return <Globe className="w-4 h-4 text-[#61affe]" />;
+      case 'environment':
+        return <Search className="w-4 h-4 text-green-400" />;
+      case 'history':
+        return <Search className="w-4 h-4 text-orange-400" />;
       default:
         return <Search className="w-4 h-4" />;
     }
@@ -161,8 +193,10 @@ export const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose, onS
               { value: 'all', label: 'All' },
               { value: 'request', label: 'Requests' },
               { value: 'collection', label: 'Collections' },
+              { value: 'environment', label: 'Environments' },
+              { value: 'history', label: 'History' },
             ]}
-            className="w-32"
+            className="w-36"
           />
         </div>
 

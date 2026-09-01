@@ -2,11 +2,13 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
-import { ChevronRight, Eye, Pencil, Copy, Trash2, Share2, MoreVertical, Check } from 'lucide-react';
+import { ChevronRight, Eye, Pencil, Copy, Trash2, Share2, MoreVertical, Check, GitFork } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { EnvironmentVariables } from './EnvironmentVariables';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { apiClient } from '@/lib/api';
+import { toast } from '../sync/SyncStatus';
 import type { Environment, Variable } from '@apiforge/shared';
 
 interface EnvironmentPanelProps {
@@ -53,6 +55,17 @@ export const EnvironmentPanel: React.FC<EnvironmentPanelProps> = ({
     headerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     if (duplicateTimeoutRef.current) clearTimeout(duplicateTimeoutRef.current);
     duplicateTimeoutRef.current = setTimeout(() => setJustDuplicated(false), 2000);
+  };
+
+  const handleFork = async () => {
+    if (isGlobals) return;
+    const name = prompt('Fork name', `${environment.name} (fork)`);
+    if (!name) return;
+    const res = await apiClient.post<Environment>(`/api/environments/${environment._id}/fork`, { name, workspaceId: environment.workspaceId });
+    if (res.success && res.data) {
+      useWorkspaceStore.getState().addEnvironment(res.data as Environment);
+      toast.success(`Forked as "${(res.data as Environment).name}"`);
+    } else toast.error(res.error || 'Fork failed');
   };
 
   return (
@@ -107,6 +120,9 @@ export const EnvironmentPanel: React.FC<EnvironmentPanelProps> = ({
                 <p className="text-sm text-gray-500">Personal</p>
               </div>
               <div className="flex items-center gap-1">
+                <Button variant="ghost" size="sm" title="Fork" onClick={handleFork}>
+                  <GitFork className="w-4 h-4" />
+                </Button>
                 <Button variant="ghost" size="sm" title="Share">
                   <Share2 className="w-4 h-4" />
                 </Button>

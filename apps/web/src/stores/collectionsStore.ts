@@ -177,6 +177,7 @@ interface CollectionsState {
   setHistory: (history: ApiRequest[]) => void;
   addToHistory: (request: ApiRequest) => void;
   clearHistory: () => void;
+  removeHistoryEntry: (id: string, index: number) => void;
   
   createNewRequest: (workspaceId: string, userId: string, collectionId?: string, folderId?: string) => ApiRequest;
   getCollectionAndFolderForRequest: (requestId: string) => { collection: Collection | null; folder: Folder | null };
@@ -501,13 +502,24 @@ export const useCollectionsStore = create<CollectionsState>()(
       setHistory: (history) => set({ history }),
       
       addToHistory: (request) => {
+        const entry = { ...request, _historyTimestamp: new Date().toISOString() } as ApiRequest & { _historyTimestamp: string };
         set((state) => ({
-          history: [request, ...state.history.slice(0, 99)]
+          history: [entry, ...state.history.slice(0, 99)]
         }));
         apiClient.post('/api/history', { request, workspaceId: request.workspaceId }).catch(() => {});
       },
       
-      clearHistory: () => set({ history: [] }),
+      clearHistory: () => {
+        set({ history: [] });
+        apiClient.delete('/api/history').catch(() => {});
+      },
+      removeHistoryEntry: (id: string, index: number) => {
+        set((state) => ({
+          history: state.history.filter((_, i) => i !== index)
+        }));
+        // also try server delete by history doc id if available
+        if (id) apiClient.delete(`/api/history/${id}`).catch(() => {});
+      },
       
       getCollectionAndFolderForRequest: (requestId: string) => {
         const { collections } = get();
@@ -545,7 +557,8 @@ export const useCollectionsStore = create<CollectionsState>()(
         params: [],
         headers: [],
         body: { mode: 'none' as const },
-        auth: { type: 'none' as const },
+        // Postman default: inherit auth from parent collection/folder
+        auth: { type: 'none' as const, inheritFromParent: true },
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         createdBy: userId,

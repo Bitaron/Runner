@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { FileJson, Layers, FolderOpen, Clock, User } from 'lucide-react';
 import { Input } from '../ui/Input';
+import { CollectionDocsEditor } from '../docs/DocumentationEditor';
 import type { Collection, Folder } from '@apiforge/shared';
 
 interface CollectionOverviewProps {
@@ -115,13 +116,17 @@ export const CollectionOverview: React.FC<CollectionOverviewProps> = ({
 
       {/* Description */}
       <div>
-        <textarea
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          onBlur={handleDescriptionSave}
-          placeholder="Add a description..."
-          className="w-full p-3 bg-[#2d2d2e] border border-[#3d3d3d] rounded-md text-sm text-gray-300 placeholder-gray-500 focus:outline-none focus:border-[#ff6b35] resize-none min-h-[80px]"
+        <CollectionDocsEditor
+          description={description}
+          onDescriptionChange={(val) => {
+            setDescription(val);
+            // auto-save on change with debounce? save on blur via effect
+            // we keep handleDescriptionSave for blur, but also update local state
+          }}
         />
+        <div className="flex justify-end mt-2">
+          <button onClick={handleDescriptionSave} className="px-3 py-1 text-xs bg-[#ff6b35] text-white rounded hover:bg-[#e55a2b]">Save description</button>
+        </div>
       </div>
 
       {/* Stats */}
