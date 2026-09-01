@@ -275,14 +275,15 @@ router.post('/:id/restore', authMiddleware, async (req: AuthenticatedRequest, re
       return;
     }
 
-    const updated = await updateDocument<Collection>(req.params.id, {
-      deletedAt: null,
-    } as unknown as Partial<Collection>);
-
     const db = getDb();
-    const trashResult = await db.find({ selector: { deletedId: req.params.id } });
+    const raw = await db.get(req.params.id) as unknown as Record<string, unknown>;
+    delete (raw as Record<string, unknown>).deletedAt;
+    (raw as Record<string, unknown>).updatedAt = new Date().toISOString();
+    await db.insert(raw as unknown as Parameters<typeof db.insert>[0]);
+    const updated = await getDocument<Collection>(req.params.id);
+    const trashResult = await db.find({ selector: { deletedId: req.params.id } } as unknown as Parameters<typeof db.find>[0]);
     for (const trashDoc of trashResult.docs) {
-      await db.destroy(trashDoc._id, trashDoc._rev);
+      await db.destroy((trashDoc as unknown as Record<string, unknown>)._id as string, (trashDoc as unknown as Record<string, unknown>)._rev as string);
     }
 
     await broadcastSyncEvent(req.user.userId, collection.workspaceId, {

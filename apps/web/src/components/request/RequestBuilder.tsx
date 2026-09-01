@@ -151,6 +151,7 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
 
   const handleBodyChange = (mode: RequestBodyMode) => {
     const body: RequestBody = { ...request.body, mode } as RequestBody;
+    if (mode === 'raw' && !body.rawType) (body as unknown as Record<string, unknown>).rawType = 'json';
     if (mode === 'grpc' && !body.grpc) body.grpc = { service: '', method: '', message: '{\n  \n}', metadata: [] };
     if (mode === 'graphql' && !body.graphql) body.graphql = { query: '', variables: '' };
     handleChange('body', body);
@@ -353,12 +354,12 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
       </div>
 
       {/* URL bar */}
-      <div className="flex items-center gap-2 p-3 border-b border-[#3d3d3d]">
+      <div className="flex items-center gap-2 p-3 border-b border-[#3d3d3d] min-w-0 flex-wrap sm:flex-nowrap">
         <select
           value={request.method}
           onChange={(e) => handleChange('method', e.target.value as HttpMethod)}
           className={cn(
-            'px-2 py-1.5 bg-[#2d2d2d] border border-[#3d3d3d] rounded-md font-bold text-sm cursor-pointer',
+            'shrink-0 px-2 py-1.5 bg-[#2d2d2d] border border-[#3d3d3d] rounded-md font-bold text-sm cursor-pointer',
             'focus:outline-none focus:ring-2 focus:ring-[#ff6b35] focus:border-transparent',
             'transition-colors duration-200 appearance-none min-w-[90px]'
           )}
@@ -435,7 +436,7 @@ export const RequestBuilder: React.FC<RequestBuilderProps> = ({
           )}
         </div>
         
-        <div className="relative" ref={sendControlsRef}>
+        <div className="relative shrink-0" ref={sendControlsRef}>
           {isLoading ? (
             <Button onClick={onCancel} variant="danger" className="gap-1">
               <X className="w-4 h-4" />

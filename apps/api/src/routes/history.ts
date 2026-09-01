@@ -40,11 +40,15 @@ router.post('/', authMiddleware, async (req: AuthenticatedRequest, res: Response
 
     const { request, response, workspaceId } = req.body;
 
+    if (!workspaceId || typeof workspaceId !== 'string') {
+      res.status(400).json({ success: false, error: 'workspaceId is required' });
+      return;
+    }
     const historyEntry: HistoryEntry = {
       _id: `history:${uuidv4()}`,
       type: 'history',
       userId: req.user.userId,
-      workspaceId: workspaceId || 'default',
+      workspaceId,
       request,
       response,
       timestamp: new Date().toISOString(),
@@ -89,8 +93,10 @@ router.delete('/', authMiddleware, async (req: AuthenticatedRequest, res: Respon
 router.delete('/:id', authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const db = getDb();
-    const doc = await db.get(req.params.id);
-    await db.destroy(req.params.id, doc._rev);
+    const doc = await db.get(req.params.id) as unknown as HistoryEntry;
+    if (!doc || doc.type !== 'history') { res.status(404).json({ success: false, error: 'History entry not found' }); return; }
+    if (doc.userId !== req.user!.userId) { res.status(403).json({ success: false, error: 'Not authorized to delete this history entry' }); return; }
+    await db.destroy(req.params.id, (doc as unknown as Record<string, unknown>)._rev as string);
     res.json({ success: true, message: 'History entry deleted' });
   } catch (error) {
     res.status(500).json({ success: false, error: 'Failed to delete history entry' });

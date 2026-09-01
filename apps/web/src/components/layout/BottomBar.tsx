@@ -58,9 +58,9 @@ export const BottomBar: React.FC<BottomBarProps> = ({
   );
 
   return (
-    <div className="flex items-center justify-between h-8 px-3 bg-[#262627] border-t border-[#3d3d3d]">
+    <div className="flex items-center justify-between h-8 px-2 sm:px-3 bg-[#262627] border-t border-[#3d3d3d] min-w-0 gap-2 overflow-hidden">
       {/* Left section */}
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1 min-w-0 overflow-hidden">
         {/* Online status */}
         <div
           role="status"
@@ -68,16 +68,16 @@ export const BottomBar: React.FC<BottomBarProps> = ({
           className={`flex items-center gap-1.5 px-2 py-1 rounded ${isConnected ? 'text-green-400' : 'text-red-400'}`}
         >
           {isConnected ? <Wifi className="w-3.5 h-3.5"  aria-hidden="true" /> : <WifiOff className="w-3.5 h-3.5"  aria-hidden="true" />}
-          <span className="text-xs">{isConnected ? 'Online' : 'Offline'}</span>
+          <span className="text-xs hidden sm:inline">{isConnected ? 'Online' : 'Offline'}</span>
         </div>
 
-        <div className="w-px h-4 bg-[#3d3d3d]" />
+        <div className="w-px h-4 bg-[#3d3d3d] hidden sm:block" />
 
         {/* Find/Replace (non-functional) */}
         <button 
           disabled
           aria-disabled="true"
-          className="flex items-center gap-1.5 px-2 py-1 text-xs text-gray-400 hover:text-white hover:bg-[#3d3d3d] rounded transition-colors opacity-50 cursor-not-allowed"
+          className="hidden sm:flex items-center gap-1.5 px-2 py-1 text-xs text-gray-400 hover:text-white hover:bg-[#3d3d3d] rounded transition-colors opacity-50 cursor-not-allowed shrink-0"
           title="Find/Replace (coming soon)"
         >
           <Search className="w-3.5 h-3.5"  aria-hidden="true" />
@@ -87,18 +87,18 @@ export const BottomBar: React.FC<BottomBarProps> = ({
         {/* Console */}
         <button 
           onClick={onConsoleOpen}
-          className="flex items-center gap-1.5 px-2 py-1 text-xs text-gray-400 hover:text-white hover:bg-[#3d3d3d] rounded transition-colors"
+          className="flex items-center gap-1.5 px-2 py-1 text-xs text-gray-400 hover:text-white hover:bg-[#3d3d3d] rounded transition-colors shrink-0"
         >
           <Terminal className="w-3.5 h-3.5"  aria-hidden="true" />
-          <span>Console</span>
+          <span className="hidden sm:inline">Console</span>
         </button>
 
-        <div className="w-px h-4 bg-[#3d3d3d]" />
+        <div className="w-px h-4 bg-[#3d3d3d] hidden sm:block" />
 
         {/* Layout toggle */}
         <button
           onClick={() => onLayoutChange(layout === 'horizontal' ? 'vertical' : 'horizontal')}
-          className="flex items-center gap-1.5 px-2 py-1 text-xs text-gray-400 hover:text-white hover:bg-[#3d3d3d] rounded transition-colors"
+          className="flex items-center gap-1.5 px-2 py-1 text-xs text-gray-400 hover:text-white hover:bg-[#3d3d3d] rounded transition-colors shrink-0"
           title={layout === 'horizontal' ? 'Switch to vertical layout' : 'Switch to horizontal layout'}
         >
           {layout === 'horizontal' ? (
@@ -126,7 +126,7 @@ export const BottomBar: React.FC<BottomBarProps> = ({
       </div>
 
       {/* Right section */}
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1 shrink-0 overflow-hidden">
         {/* Mocks */}
         <button 
           onClick={onMocksOpen}

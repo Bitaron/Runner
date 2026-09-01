@@ -80,12 +80,50 @@ const buildUrl = (url: string, params: KeyValue[]): string => {
   return `${url}${separator}${queryString}`;
 };
 
+const BLOCKED_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '0.0.0.0']);
+const BLOCKED_PREFIXES = ['10.', '192.168.', '172.16.', '172.17.', '172.18.', '172.19.', '172.20.', '172.21.', '172.22.', '172.23.', '172.24.', '172.25.', '172.26.', '172.27.', '172.28.', '172.29.', '172.30.', '172.31.', '169.254.'];
+const BLOCKED_HOST_SUFFIXES = ['.internal', '.local'];
+
+const isBlockedUrl = (rawUrl: string): string | null => {
+  try {
+    const u = new URL(rawUrl);
+    if (!['http:', 'https:'].includes(u.protocol)) return 'Only http and https protocols are allowed';
+    const host = u.hostname.toLowerCase();
+    if (!host) return 'Invalid URL';
+    if (BLOCKED_HOSTS.has(host)) return 'Requests to localhost are not allowed';
+    if (BLOCKED_PREFIXES.some(p => host.startsWith(p) || u.hostname.startsWith(p))) return 'Requests to private networks are not allowed';
+    if (BLOCKED_HOST_SUFFIXES.some(s => host.endsWith(s))) return 'Requests to internal hosts are not allowed';
+    // Block cloud metadata service
+    if (host === '169.254.169.254' || host === 'metadata.google.internal') return 'Requests to metadata service are not allowed';
+    // Block couchdb/internal service port if attacker tries to target API itself
+    const couchUrl = process.env.COUCHDB_URL || '';
+    try {
+      const couchHost = couchUrl ? new URL(couchUrl).hostname.toLowerCase() : '';
+      if (couchHost && host === couchHost) return 'Requests to internal services are not allowed';
+    } catch {}
+    return null;
+  } catch {
+    return 'Invalid URL';
+  }
+};
+
 router.post('/', optionalAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const { method, url, headers, params, body, auth, timeout, followRedirects = true, verifySsl = true } = req.body as ExecuteRequestBody;
+    const { method, url, headers, params, body, auth, timeout, followRedirects = true, verifySsl } = req.body as ExecuteRequestBody;
 
     if (!url) {
       res.status(400).json({ success: false, error: 'URL is required' });
+      return;
+    }
+    const blockedReason = isBlockedUrl(url);
+    if (blockedReason) {
+      res.status(400).json({ success: false, error: blockedReason });
+      return;
+    }
+    // verifySsl must default to true and can only be disabled explicitly by authenticated users
+    const allowInsecure = verifySsl === false && !!req.user;
+    if (verifySsl === false && !req.user) {
+      res.status(403).json({ success: false, error: 'Disabling SSL verification requires authentication' });
       return;
     }
 
@@ -108,14 +146,20 @@ router.post('/', optionalAuth, async (req: AuthenticatedRequest, res: Response):
 
       const fullUrl = buildUrl(url, filteredParams);
 
+      // re-validate full URL after query params appended
+      const blockedFull = isBlockedUrl(fullUrl);
+      if (blockedFull) {
+        res.status(400).json({ success: false, error: blockedFull });
+        return;
+      }
       const config: AxiosRequestConfig = {
         method: method.toLowerCase() as Method,
         url: fullUrl,
         headers: axiosHeaders,
-        timeout: timeout || 30000,
+        timeout: Math.min(timeout || 30000, 30000),
         validateStatus: () => true,
         maxRedirects: followRedirects ? 5 : 0,
-        httpsAgent: verifySsl ? undefined : new (require('https').Agent)({ rejectUnauthorized: false }),
+        httpsAgent: allowInsecure ? new (require('https').Agent)({ rejectUnauthorized: false }) : undefined,
       };
 
       if (auth && auth.type !== 'none') {

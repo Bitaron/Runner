@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { getDb, getDocument } from '../config/database';
 import { authMiddleware, AuthenticatedRequest } from '../middleware/auth';
+import { requireWorkspaceAccess } from '../middleware/rbac';
 import { broadcastSyncEvent } from '../websocket';
 import type { TrashItem, Collection, Environment, ApiRequest, Folder } from '@apiforge/shared';
 
@@ -15,20 +16,39 @@ router.get('/', authMiddleware, async (req: AuthenticatedRequest, res: Response)
   try {
     if (!req.user) { res.status(401).json({ success: false, error: 'Unauthorized' }); return; }
     const { workspaceId } = req.query;
+    if (workspaceId && typeof workspaceId === 'string') {
+      const wsCheck = await requireWorkspaceAccess(req.user.userId, workspaceId);
+      if (!wsCheck.allowed) { res.status(wsCheck.status || 403).json({ success: false, error: wsCheck.error }); return; }
+    }
     const db = getDb();
 
-    // Find all trash items
-    const result = await db.find({ selector: { deletedId: { $exists: true } } } as unknown as Parameters<typeof db.find>[0]);
-    let items = (result.docs as unknown as TrashItem[]).filter(d => d && typeof (d as unknown as Record<string, unknown>).deletedId === 'string');
+    // Find all trash items - filter by type TrashItem via mango index
+    const result = await db.find({ selector: { type: { $in: ['collection','request','environment','folder'] }, deletedId: { $exists: true } } } as unknown as Parameters<typeof db.find>[0]);
+    let items = (result.docs as unknown as TrashItem[]).filter(d => d && typeof (d as unknown as Record<string, unknown>).deletedId === 'string' && (d as unknown as Record<string, unknown>).type !== 'audit');
 
-    // Cleanup expired (30d) - delete trash doc and underlying soft-deleted doc permanently
-    const now = Date.now();
+    // Filter by workspace access before cleanup to avoid leaking cross-workspace expired cleanup side-effects
+    if (workspaceId && typeof workspaceId === 'string') {
+      items = items.filter(i => {
+        const data = i.data as unknown as Record<string, unknown>;
+        return data.workspaceId === workspaceId || (data as unknown as Collection)?.workspaceId === workspaceId;
+      });
+    } else {
+      const allowed: TrashItem[] = [];
+      for (const it of items) {
+        const wsId = (it.data as unknown as Record<string, unknown>).workspaceId as string | undefined;
+        if (!wsId) continue;
+        const c = await requireWorkspaceAccess(req.user!.userId, wsId);
+        if (c.allowed) allowed.push(it);
+      }
+      items = allowed;
+    }
+
+    // Cleanup expired (30d) - only for filtered items caller can see
     const expired = items.filter(isExpired);
     for (const exp of expired) {
       try {
         const trashDoc = await db.get(exp._id) as unknown as TrashItem & { _rev?: string };
         if (trashDoc) await db.destroy(exp._id, (trashDoc as unknown as Record<string, unknown>)._rev as string);
-        // also try to permanently delete the soft-deleted doc if still exists
         try {
           const doomed = await db.get(exp.deletedId) as unknown as Record<string, unknown>;
           if (doomed) await db.destroy(exp.deletedId, doomed._rev as string);
@@ -36,17 +56,6 @@ router.get('/', authMiddleware, async (req: AuthenticatedRequest, res: Response)
       } catch {}
     }
     items = items.filter(i => !isExpired(i));
-
-    // Filter by workspaceId if provided - trash data contains workspaceId
-    if (workspaceId && typeof workspaceId === 'string') {
-      items = items.filter(i => {
-        const data = i.data as unknown as Record<string, unknown>;
-        return data.workspaceId === workspaceId || (data as unknown as Collection)?.workspaceId === workspaceId;
-      });
-    } else {
-      // without workspaceId, only show trash for workspaces user has access to? For now show all user's trash items where data.createdBy === userId or workspace accessible
-      // simple filter: show items where data.createdBy === userId or workspaceId in user's workspaces (not perfect but okay)
-    }
 
     // sort by deletedAt desc
     items.sort((a, b) => new Date(b.deletedAt).getTime() - new Date(a.deletedAt).getTime());
@@ -65,6 +74,11 @@ router.post('/:id/restore', authMiddleware, async (req: AuthenticatedRequest, re
     const db = getDb();
     const trashItem = await getDocument<TrashItem>(req.params.id);
     if (!trashItem) { res.status(404).json({ success: false, error: 'Trash item not found' }); return; }
+    const wsId = (trashItem.data as unknown as Record<string, unknown>).workspaceId as string | undefined;
+    if (wsId) {
+      const wsCheck = await requireWorkspaceAccess(req.user.userId, wsId);
+      if (!wsCheck.allowed) { res.status(wsCheck.status || 403).json({ success: false, error: wsCheck.error }); return; }
+    }
 
     const deletedId = trashItem.deletedId;
     const data = trashItem.data as unknown as Record<string, unknown>;
@@ -122,6 +136,11 @@ router.delete('/:id', authMiddleware, async (req: AuthenticatedRequest, res: Res
     const db = getDb();
     const trashItem = await getDocument<TrashItem>(req.params.id);
     if (!trashItem) { res.status(404).json({ success: false, error: 'Trash item not found' }); return; }
+    const wsId = (trashItem.data as unknown as Record<string, unknown>).workspaceId as string | undefined;
+    if (wsId) {
+      const wsCheck = await requireWorkspaceAccess(req.user.userId, wsId);
+      if (!wsCheck.allowed) { res.status(wsCheck.status || 403).json({ success: false, error: wsCheck.error }); return; }
+    }
 
     // delete trash doc
     try {

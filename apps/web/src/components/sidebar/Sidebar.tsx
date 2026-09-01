@@ -916,21 +916,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   const renderCollectionsContent = () => (
-    <div className="p-2">
-      <div className="flex gap-2">
+    <div className="p-2 min-w-0">
+      <div className="flex gap-2 min-w-0">
         <button
           onClick={() => setShowNewCollectionModal(true)}
-          className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-sm text-gray-400 hover:text-white hover:bg-[#333334] rounded transition-colors border border-[#3d3d3d]"
+          className="flex-1 min-w-0 flex items-center justify-center gap-1 px-2 py-1.5 text-sm text-gray-400 hover:text-white hover:bg-[#333334] rounded transition-colors border border-[#3d3d3d] truncate"
         >
-          <Plus className="w-4 h-4" />
-          New
+          <Plus className="w-4 h-4 shrink-0" />
+          <span className="truncate">New</span>
         </button>
         <button
           onClick={handleExportWorkspace}
-          className="flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-gray-300 bg-[#3d3d3d] hover:bg-[#4d4d4d] rounded transition-colors"
+          className="shrink-0 flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-gray-300 bg-[#3d3d3d] hover:bg-[#4d4d4d] rounded transition-colors whitespace-nowrap"
           title="Export all collections & environments"
         >
-          <Download className="w-3.5 h-3.5" />
+          <Download className="w-3.5 h-3.5 shrink-0" />
           Export All
         </button>
       </div>
@@ -941,7 +941,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       ) : (
         <div ref={treeRef} role="tree" aria-label="Collections">
-          {collections.map((collection) => renderCollection(collection))}
+          {collections
+            .filter((c) => {
+              if (!searchQuery.trim()) return true;
+              const q = searchQuery.toLowerCase();
+              const nameMatch = c.name.toLowerCase().includes(q);
+              const reqMatch = c.requests.some((r) => r.name.toLowerCase().includes(q) || r.url.toLowerCase().includes(q));
+              const folderMatch = c.folders.some((f) => f.name.toLowerCase().includes(q) || f.requests.some((r) => r.name.toLowerCase().includes(q) || r.url.toLowerCase().includes(q)));
+              return nameMatch || reqMatch || folderMatch;
+            })
+            .map((collection) => renderCollection(collection))}
         </div>
       )}
     </div>

@@ -86,7 +86,7 @@ export const RequestTabs: React.FC<RequestTabsProps> = ({
   };
 
   return (
-    <div className="flex items-center h-10 bg-[#1e1e1e] border-b border-[#3d3d3d] overflow-x-auto">
+    <div className="flex items-center h-10 bg-[#1e1e1e] border-b border-[#3d3d3d] overflow-x-auto min-w-0 scrollbar-thin">
       {tabs.map((tab) => (
         <div
           key={tab.id}
@@ -118,7 +118,7 @@ export const RequestTabs: React.FC<RequestTabsProps> = ({
       ))}
       <button
         onClick={onNewTab}
-        className="flex items-center justify-center w-10 h-10 text-gray-400 hover:text-white hover:bg-[#262627] transition-colors"
+        className="flex items-center justify-center w-10 h-10 shrink-0 text-gray-400 hover:text-white hover:bg-[#262627] transition-colors"
       >
         <Plus className="w-4 h-4" />
       </button>

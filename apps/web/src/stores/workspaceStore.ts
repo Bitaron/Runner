@@ -111,11 +111,19 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         globalVariables: [...state.globalVariables, variable]
       })),
       
-      updateGlobalVariable: (key, updates) => set((state) => ({
-        globalVariables: state.globalVariables.map((v) =>
-          v.key === key ? { ...v, ...updates } : v
-        )
-      })),
+      updateGlobalVariable: (key, updates) => set((state) => {
+        const exists = state.globalVariables.some((v) => v.key === key);
+        if (exists) {
+          return {
+            globalVariables: state.globalVariables.map((v) =>
+              v.key === key ? { ...v, ...updates } : v
+            ),
+          };
+        }
+        // create if not exists (pm.globals.set should create)
+        const newVar = { key, value: (updates as { value?: string }).value ?? '', type: 'default' as const, enabled: true, ...(updates as object) };
+        return { globalVariables: [...state.globalVariables, newVar] };
+      }),
       
       removeGlobalVariable: (key) => set((state) => ({
         globalVariables: state.globalVariables.filter((v) => v.key !== key)

@@ -1045,11 +1045,12 @@ export default function WorkspacePage() {
       <div
         id="workspace-sidebar"
         className={cn(
-          'shrink-0 h-full',
+          'shrink-0 h-full flex flex-col',
           'max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-50 max-md:w-[85vw] max-md:max-w-[320px]',
           'max-md:shadow-2xl max-md:transition-transform max-md:duration-200',
           mobileSidebarOpen ? 'max-md:translate-x-0' : 'max-md:-translate-x-full max-md:pointer-events-none'
         )}
+        style={{ width: sidebarCollapsed ? 48 : sidebarWidth, minWidth: sidebarCollapsed ? 48 : 150, maxWidth: sidebarCollapsed ? 48 : 400 }}
       >
         <Sidebar
           onSelectRequest={handleSelectRequest}
@@ -1077,15 +1078,15 @@ export default function WorkspacePage() {
           onDeleteFolder={handleDeleteFolder}
           activeCollectionId={selectedCollection?._id}
           activeFolderId={selectedFolder?._id}
-          width={sidebarWidth}
+          width={sidebarCollapsed ? 48 : sidebarWidth}
           onWidthChange={setSidebarWidth}
           isCollapsed={sidebarCollapsed}
           onCollapseChange={setSidebarCollapsed}
-          className="max-md:!w-full"
+          className="max-md:!w-full !w-full h-full min-w-0"
         />
       </div>
 
-      <div className="flex-1 flex flex-col overflow-hidden relative">
+      <div className="flex-1 flex flex-col overflow-hidden relative min-w-0">
         <div className="flex md:hidden items-center gap-2 h-10 px-2 bg-[#262627] border-b border-[#3d3d3d]">
           <button
             type="button"
@@ -1358,7 +1359,7 @@ export default function WorkspacePage() {
       </div>
 
       {selectedCollection && (
-        <div className="fixed inset-y-0 right-0 z-40 w-full max-w-[500px] bg-[#262627] shadow-2xl border-l border-[#3d3d3d] sm:static sm:z-auto sm:w-[320px] sm:max-w-none sm:shadow-none md:w-[380px] lg:w-[500px]">
+        <div className="fixed inset-y-0 right-0 z-40 w-full max-w-[500px] bg-[#262627] shadow-2xl border-l border-[#3d3d3d] sm:static sm:z-auto sm:w-[320px] sm:max-w-none sm:shadow-none md:w-[380px] lg:w-[500px] shrink-0">
           <CollectionPanel
             collection={selectedCollection}
             folder={selectedFolder || undefined}
@@ -1381,7 +1382,7 @@ export default function WorkspacePage() {
       )}
 
       {(selectedEnvironment || showGlobals) && (
-        <div className="fixed inset-y-0 right-0 z-40 w-full max-w-[500px] bg-[#262627] shadow-2xl border-l border-[#3d3d3d] sm:static sm:z-auto sm:w-[320px] sm:max-w-none sm:shadow-none md:w-[380px] lg:w-[500px]">
+        <div className="fixed inset-y-0 right-0 z-40 w-full max-w-[500px] bg-[#262627] shadow-2xl border-l border-[#3d3d3d] sm:static sm:z-auto sm:w-[320px] sm:max-w-none sm:shadow-none md:w-[380px] lg:w-[500px] shrink-0">
           <EnvironmentPanel
             environment={showGlobals 
               ? { _id: 'globals', type: 'environment', name: 'Globals', workspaceId: currentWorkspace?._id || '', variables: globalVariables, createdAt: '', updatedAt: '', isGlobal: true }

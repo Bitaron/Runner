@@ -7,7 +7,7 @@ import { Select } from '@/components/ui/Select';
 import { apiClient } from '@/lib/api';
 import { toast } from '@/components/sync/SyncStatus';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { Globe, Copy, Trash2, ExternalLink } from 'lucide-react';
+import { Globe, Copy, Trash2 } from 'lucide-react';
 import type { PublishedDoc, Collection } from '@apiforge/shared';
 
 export const PublishManager: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen, onClose }) => {
@@ -25,9 +25,11 @@ export const PublishManager: React.FC<{ isOpen: boolean; onClose: () => void }> 
     if (pRes.success && pRes.data) setDocs(pRes.data as PublishedDoc[]);
     if (cRes.success && cRes.data) {
       setCollections(cRes.data as Collection[]);
-      if (!selected && (cRes.data as Collection[]).length) setSelected((cRes.data as Collection[])[0]._id);
+      if ((cRes.data as Collection[]).length) {
+        setSelected(prev => prev || (cRes.data as Collection[])[0]._id);
+      }
     }
-  }, [currentWorkspace, selected]);
+  }, [currentWorkspace]);
 
   useEffect(() => { if (isOpen) load(); }, [isOpen, load]);
 
@@ -45,9 +47,6 @@ export const PublishManager: React.FC<{ isOpen: boolean; onClose: () => void }> 
   };
 
   const copyLink = (slug: string) => {
-    const base = typeof window !== 'undefined' ? window.location.origin : '';
-    const url = `${base}/docs/${slug}`;
-    // also api url
     const apiUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/api/publish/slug/${slug}`;
     navigator.clipboard.writeText(apiUrl);
     toast.success('Link copied');

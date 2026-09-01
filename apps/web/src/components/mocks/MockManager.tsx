@@ -9,7 +9,7 @@ import { apiClient } from '@/lib/api';
 import { toast } from '@/components/sync/SyncStatus';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useCollectionsStore } from '@/stores/collectionsStore';
-import { Globe, Trash2, Copy, ExternalLink } from 'lucide-react';
+import { Globe, Trash2, Copy } from 'lucide-react';
 import type { MockServer, Collection } from '@apiforge/shared';
 
 export const MockManager: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen, onClose }) => {
@@ -28,9 +28,11 @@ export const MockManager: React.FC<{ isOpen: boolean; onClose: () => void }> = (
     if (mRes.success && mRes.data) setMocks(mRes.data as MockServer[]);
     if (cRes.success && cRes.data) {
       setCollections(cRes.data as Collection[]);
-      if (!selectedCollection && (cRes.data as Collection[]).length) setSelectedCollection((cRes.data as Collection[])[0]._id);
+      if ((cRes.data as Collection[]).length) {
+        setSelectedCollection(prev => prev || (cRes.data as Collection[])[0]._id);
+      }
     }
-  }, [currentWorkspace, selectedCollection]);
+  }, [currentWorkspace]);
 
   useEffect(() => { if (isOpen) load(); }, [isOpen, load]);
 
@@ -83,7 +85,7 @@ export const MockManager: React.FC<{ isOpen: boolean; onClose: () => void }> = (
             </div>
           ))}
         </div>
-        <p className="text-xs text-gray-500">Mocks return the collection's example responses or a generic JSON. Use <code>/call/&lt;path&gt;</code> with matching method.</p>
+        <p className="text-xs text-gray-500">Mocks return the collection&apos;s example responses or a generic JSON. Use <code>/call/&lt;path&gt;</code> with matching method.</p>
       </div>
     </Modal>
   );

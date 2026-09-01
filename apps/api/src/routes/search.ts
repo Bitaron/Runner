@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { getDb } from '../config/database';
 import { authMiddleware, AuthenticatedRequest } from '../middleware/auth';
+import { requireWorkspaceAccess } from '../middleware/rbac';
 import type { Collection, ApiRequest } from '@apiforge/shared';
 
 const router = Router();
@@ -32,25 +33,50 @@ router.get('/', authMiddleware, async (req: AuthenticatedRequest, res: Response)
 
     const searchQuery = q.toLowerCase();
     const db = getDb();
-    const results: SearchResult[] = [];
 
-    const allCollections = await db.view('app', 'by_type', {
+    // Enforce workspace scoping: if workspaceId given, verify access; if not, restrict to workspaces user can access
+    if (workspaceId && typeof workspaceId === 'string') {
+      const wsCheck = await requireWorkspaceAccess(req.user!.userId, workspaceId);
+      if (!wsCheck.allowed) { res.status(wsCheck.status || 403).json({ success: false, error: wsCheck.error }); return; }
+    }
+
+    const allCollectionsRaw = await db.view('app', 'by_type', {
       key: 'collection',
       include_docs: true,
     });
 
-    const collections = allCollections.rows
+    let collections = allCollectionsRaw.rows
       .map((row) => row.doc as Collection)
       .filter((c) => !c.deletedAt);
 
-    const allRequests = await db.view('app', 'by_type', {
+    // Filter to only workspaces caller can access when no explicit workspaceId filter
+    if (!workspaceId) {
+      const allowed: Collection[] = [];
+      for (const c of collections) {
+        const chk = await requireWorkspaceAccess(req.user!.userId, c.workspaceId);
+        if (chk.allowed) allowed.push(c);
+      }
+      collections = allowed;
+    }
+
+    const allRequestsRaw = await db.view('app', 'by_type', {
       key: 'request',
       include_docs: true,
     });
 
-    const requests = allRequests.rows
+    let requests = allRequestsRaw.rows
       .map((row) => row.doc as ApiRequest)
       .filter((r) => !r.deletedAt);
+    if (!workspaceId) {
+      const allowedReq: ApiRequest[] = [];
+      for (const r of requests) {
+        const chk = await requireWorkspaceAccess(req.user!.userId, r.workspaceId);
+        if (chk.allowed) allowedReq.push(r);
+      }
+      requests = allowedReq;
+    }
+
+    const results: SearchResult[] = [];
 
     if (!type || type === 'collection' || type === 'all') {
       for (const collection of collections) {
@@ -156,7 +182,17 @@ router.get('/', authMiddleware, async (req: AuthenticatedRequest, res: Response)
     if (!type || type === 'environment' || type === 'all') {
       try {
         const envView = await db.view('app', 'by_type', { key: 'environment', include_docs: true });
-        const envs = envView.rows.map(r => r.doc as unknown as { _id: string; name: string; workspaceId?: string; variables?: Array<{ key: string; value: string }>; deletedAt?: string }).filter(e => !e.deletedAt);
+        let envs = envView.rows.map(r => r.doc as unknown as { _id: string; name: string; workspaceId?: string; variables?: Array<{ key: string; value: string }>; deletedAt?: string }).filter(e => !e.deletedAt);
+        // filter envs to accessible workspaces when no explicit workspaceId
+        if (!workspaceId) {
+          const allowedEnv: typeof envs = [];
+          for (const e of envs) {
+            if (!e.workspaceId) continue;
+            const chk = await requireWorkspaceAccess(req.user!.userId, e.workspaceId);
+            if (chk.allowed) allowedEnv.push(e);
+          }
+          envs = allowedEnv;
+        }
         for (const env of envs) {
           if (workspaceId && env.workspaceId !== workspaceId) continue;
           if (env.name.toLowerCase().includes(searchQuery)) {

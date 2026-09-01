@@ -131,16 +131,23 @@ export const TopBar: React.FC<TopBarProps> = ({
         </div>
 
         {/* Center section - Search */}
-        <div className="flex-1 min-w-0 max-w-xl mx-4">
+        <div className="flex-1 min-w-0 max-w-xl mx-2 sm:mx-4 hidden sm:flex">
           <button
             onClick={onSearchOpen}
-            className="flex items-center gap-2 w-full px-3 py-1.5 bg-[#1e1e1e] border border-[#3d3d3d] rounded-full text-sm text-gray-400 hover:border-[#ff6b35] transition-colors"
+            className="flex items-center gap-2 w-full px-3 py-1.5 bg-[#1e1e1e] border border-[#3d3d3d] rounded-full text-sm text-gray-400 hover:border-[#ff6b35] transition-colors min-w-0"
           >
-            <Search className="w-4 h-4" aria-hidden="true" />
-            <span>Search</span>
-            <kbd className="ml-auto px-1.5 py-0.5 text-xs bg-[#3d3d3d] rounded">⌘K</kbd>
+            <Search className="w-4 h-4 shrink-0" aria-hidden="true" />
+            <span className="truncate">Search</span>
+            <kbd className="ml-auto px-1.5 py-0.5 text-xs bg-[#3d3d3d] rounded shrink-0 hidden sm:inline">⌘K</kbd>
           </button>
         </div>
+        <button
+          onClick={onSearchOpen}
+          aria-label="Search"
+          className="sm:hidden p-2 text-gray-400 hover:text-white hover:bg-[#3d3d3d] rounded transition-colors shrink-0"
+        >
+          <Search className="w-4 h-4" />
+        </button>
 
         {/* Right section */}
         <div className="flex items-center gap-1 shrink-0">

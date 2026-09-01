@@ -131,10 +131,29 @@ export const getDocument = async <T extends CouchDocument>(id: string): Promise<
 };
 
 export const updateDocument = async <T extends CouchDocument>(id: string, updates: Partial<T>): Promise<T> => {
-  const existing = await db.get(id);
-  const updated = { ...existing, ...updates, updatedAt: new Date().toISOString() };
-  const result = await db.insert(updated as unknown as CouchDocument);
-  return { ...updated, _rev: result.rev } as unknown as T;
+  const existing = await db.get(id) as unknown as Record<string, unknown>;
+  // support null as deletion sentinel for soft-delete restoration (CouchDB has no $unset)
+  const updatesRecord = updates as unknown as Record<string, unknown>;
+  const hasNull = Object.values(updatesRecord).some(v => v === null);
+  const base = { ...existing };
+  if (hasNull) {
+    for (const [k, v] of Object.entries(updatesRecord)) {
+      if (v === null) delete (base as Record<string, unknown>)[k];
+      else (base as Record<string, unknown>)[k] = v;
+    }
+    (base as Record<string, unknown>).updatedAt = new Date().toISOString();
+  } else {
+    Object.assign(base, updatesRecord, { updatedAt: new Date().toISOString() });
+  }
+  const result = await db.insert(base as unknown as CouchDocument);
+  return { ...base, _rev: result.rev } as unknown as T;
+};
+
+export const unsetField = async (id: string, field: string): Promise<void> => {
+  const existing = await db.get(id) as unknown as Record<string, unknown>;
+  delete (existing as Record<string, unknown>)[field];
+  (existing as Record<string, unknown>).updatedAt = new Date().toISOString();
+  await db.insert(existing as unknown as CouchDocument);
 };
 
 export const deleteDocument = async (id: string): Promise<void> => {

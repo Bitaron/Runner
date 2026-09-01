@@ -187,8 +187,8 @@ export const ResponseViewer: React.FC<ResponseViewerProps> = ({
   }
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center gap-4 p-3 border-b border-[#3d3d3d]">
+    <div className="flex flex-col h-full min-w-0">
+      <div className="flex items-center gap-2 sm:gap-4 p-3 border-b border-[#3d3d3d] min-w-0 flex-wrap">
         <span className={cn('text-lg font-bold', getStatusColor(response.status))}>
           {response.status} {response.statusText}
         </span>
@@ -203,7 +203,7 @@ export const ResponseViewer: React.FC<ResponseViewerProps> = ({
           <span className="text-sm">{formatBytes(response.size)}</span>
         </div>
 
-        <div className="flex items-center gap-2 ml-auto">
+        <div className="flex items-center gap-2 ml-auto shrink-0">
           <Button variant="ghost" size="sm" onClick={handleCopy}>
             {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
             {copied ? 'Copied' : 'Copy'}

@@ -14,7 +14,7 @@ interface CookieState {
 }
 
 const domainMatches = (cookieDomain: string | undefined, urlHost: string): boolean => {
-  if (!cookieDomain) return true; // host-only? treat as match for now
+  if (!cookieDomain) return false; // host-only cookie: caller must handle via stored host fallback in upsert
   const cd = cookieDomain.replace(/^\./, '').toLowerCase();
   const host = urlHost.toLowerCase();
   return host === cd || host.endsWith(`.${cd}`);
@@ -49,14 +49,20 @@ export const useCookieStore = create<CookieState>()(
 
       getCookiesForUrl: (url: string) => {
         try {
-          const host = new URL(url).hostname;
+          const parsed = new URL(url);
+          const host = parsed.hostname;
+          const pathname = parsed.pathname;
           const now = new Date();
           return get().cookies.filter((c) => {
             if (c.expires) {
               const exp = new Date(c.expires);
               if (!isNaN(exp.getTime()) && exp < now) return false;
             }
-            return domainMatches(c.domain, host) && (!c.path || url.includes(c.path));
+            // host-only cookies (domain === host from upsert) only match exact host
+            const domainOk = c.domain ? domainMatches(c.domain, host) || c.domain.toLowerCase() === host.toLowerCase() : false;
+            if (!domainOk) return false;
+            if (!c.path) return true;
+            return pathname.startsWith(c.path);
           });
         } catch {
           return [];

@@ -1,0 +1,730 @@
+
+> apiforge@1.0.0 dev:api
+> npm run dev --workspace=@apiforge/api
+
+
+> @apiforge/api@1.0.0 dev
+> ts-node-dev --respawn --transpile-only src/index.ts
+
+[INFO] 20:16:31 ts-node-dev ver. 2.0.0 (using ts-node ver. 10.9.2, typescript ver. 5.9.3)
+[SECURITY WARNING] JWT_SECRET is not set. Using a random per-process secret; all tokens will be invalidated on every restart. Set it explicitly for stable sessions.
+[SECURITY WARNING] JWT_REFRESH_SECRET is not set. Using a random per-process secret; all tokens will be invalidated on every restart. Set it explicitly for stable sessions.
+Database 'apiforge' already exists
+Database initialized
+Sync WebSocket server started on /ws
+Sync WebSocket server initialized
+WebSocket proxy server started on /ws-proxy
+WS proxy initialized
+Server running on port 4000
+[0mGET /health [33m404[0m 12.838 ms - 43[0m
+[0mGET /api/health [32m200[0m 6.871 ms - 43[0m
+[0mPOST /api/auth/guest [32m201[0m 786.864 ms - -[0m
+[0mGET /api/workspaces [32m200[0m 267.032 ms - 26[0m
+[0mGET /api/workspaces [36m304[0m 74.596 ms - -[0m
+[0mGET /api/environments [32m200[0m 90.752 ms - -[0m
+[0mGET /api/collections [32m200[0m 203.848 ms - -[0m
+[0mPOST /api/workspaces [32m201[0m 92.968 ms - 278[0m
+Client disconnected
+[0mGET /api/collections?workspaceId=workspace:bd6857b6-b308-4295-869e-88df9682331e [32m200[0m 91.774 ms - 26[0m
+[0mGET /api/environments?workspaceId=workspace:bd6857b6-b308-4295-869e-88df9682331e [32m200[0m 115.269 ms - 26[0m
+[0mGET /api/collections?workspaceId=workspace:bd6857b6-b308-4295-869e-88df9682331e [36m304[0m 57.845 ms - -[0m
+[0mGET /api/environments?workspaceId=workspace:bd6857b6-b308-4295-869e-88df9682331e [36m304[0m 93.812 ms - -[0m
+[0mPOST /api/auth/guest [32m201[0m 978.857 ms - 1136[0m
+[0mGET /api/workspaces [33m401[0m 0.378 ms - 45[0m
+[0mGET /api/workspaces [33m401[0m 1.311 ms - 45[0m
+[0mPOST /api/auth/refresh [33m401[0m 2.684 ms - 53[0m
+[0mPOST /api/auth/guest [32m201[0m 1319.367 ms - -[0m
+[0mPOST /api/auth/guest [32m201[0m 1052.772 ms - -[0m
+[0mPOST /api/auth/guest [32m201[0m 813.845 ms - -[0m
+[0mPOST /api/auth/guest [32m201[0m 730.656 ms - -[0m
+[0mGET /api/workspaces [33m401[0m 0.512 ms - 45[0m
+[0mPOST /api/auth/guest [32m201[0m 785.346 ms - -[0m
+Client disconnected
+Client disconnected
+[0mGET /api/workspaces [32m200[0m 83.639 ms - 26[0m
+[0mGET /api/workspaces [36m304[0m 78.003 ms - -[0m
+[0mGET /api/collections?workspaceId=workspace:9cafb5be-0429-4b67-9115-1855a78d52d2 [36m304[0m 79.270 ms - -[0m
+[0mGET /api/environments?workspaceId=workspace:9cafb5be-0429-4b67-9115-1855a78d52d2 [36m304[0m 113.255 ms - -[0m
+[0mPOST /api/workspaces [32m201[0m 80.766 ms - 278[0m
+Client disconnected
+[0mGET /api/collections?workspaceId=workspace:8cb458de-6704-4621-b6aa-2a4616ef21d9 [32m200[0m 110.425 ms - 26[0m
+[0mGET /api/environments?workspaceId=workspace:8cb458de-6704-4621-b6aa-2a4616ef21d9 [32m200[0m 103.432 ms - 26[0m
+[0mGET /api/collections?workspaceId=workspace:8cb458de-6704-4621-b6aa-2a4616ef21d9 [36m304[0m 67.806 ms - -[0m
+[0mGET /api/environments?workspaceId=workspace:8cb458de-6704-4621-b6aa-2a4616ef21d9 [36m304[0m 63.848 ms - -[0m
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+[0mPOST /api/execute [33m400[0m 31.671 ms - 65[0m
+Client disconnected
+[0mPOST /api/execute [32m200[0m 209.504 ms - -[0m
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+[0mPOST /api/execute [32m200[0m 541.276 ms - -[0m
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+[0mPOST /api/execute [32m200[0m 2841.523 ms - -[0m
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+[0mPOST /api/execute [32m200[0m 1209.491 ms - -[0m
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+[0mPOST /api/execute [32m200[0m 1220.585 ms - -[0m
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+[0mPOST /api/execute [32m200[0m 3128.515 ms - -[0m
+Client disconnected
+Client disconnected
+Client disconnected
+[0mGET /api/workspaces [33m401[0m 0.453 ms - 45[0m
+[0mGET /api/workspaces [33m401[0m 2.433 ms - 45[0m
+[0mPOST /api/auth/refresh [32m200[0m 62.752 ms - 820[0m
+Client disconnected
+[0mGET /api/workspaces [32m200[0m 52.166 ms - 324[0m
+[0mGET /api/workspaces [36m304[0m 54.346 ms - -[0m
+[0mGET /api/collections?workspaceId=workspace:8cb458de-6704-4621-b6aa-2a4616ef21d9 [36m304[0m 28.458 ms - -[0m
+[0mGET /api/environments?workspaceId=workspace:8cb458de-6704-4621-b6aa-2a4616ef21d9 [36m304[0m 54.172 ms - -[0m
+[0mGET /api/collections?workspaceId=workspace:8cb458de-6704-4621-b6aa-2a4616ef21d9 [36m304[0m 33.535 ms - -[0m
+[0mGET /api/environments?workspaceId=workspace:8cb458de-6704-4621-b6aa-2a4616ef21d9 [36m304[0m 40.366 ms - -[0m
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+[0mPOST /api/execute [32m200[0m 2583.132 ms - 909[0m
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+[0mPOST /api/execute [32m200[0m 944.002 ms - -[0m
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+[0mGET /api/collections?workspaceId=workspace:8cb458de-6704-4621-b6aa-2a4616ef21d9 [36m304[0m 27.493 ms - -[0m
+[0mGET /api/environments?workspaceId=workspace:8cb458de-6704-4621-b6aa-2a4616ef21d9 [36m304[0m 47.457 ms - -[0m
+Client disconnected
+Client disconnected
+[0mGET /api/mocks?workspaceId=workspace:8cb458de-6704-4621-b6aa-2a4616ef21d9 [32m200[0m 33.904 ms - 26[0m
+[0mGET /api/collections?workspaceId=workspace:8cb458de-6704-4621-b6aa-2a4616ef21d9 [36m304[0m 34.573 ms - -[0m
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+[0mPOST /api/execute [32m200[0m 2442.596 ms - 899[0m
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+[0mPOST /api/execute [32m200[0m 1315.925 ms - 808[0m
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+[0mPOST /api/execute [32m200[0m 1678.677 ms - 442[0m
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+[0mGET /api/workspaces [33m401[0m 1.403 ms - 41[0m
+[0mGET /api/workspaces [33m401[0m 1.120 ms - 41[0m
+Client disconnected
+[0mPOST /api/auth/refresh [32m200[0m 368.983 ms - 820[0m
+Client disconnected
+[0mGET /api/workspaces [36m304[0m 20.942 ms - -[0m
+[0mGET /api/collections?workspaceId=workspace:8cb458de-6704-4621-b6aa-2a4616ef21d9 [36m304[0m 15.053 ms - -[0m
+[0mGET /api/workspaces [36m304[0m 27.470 ms - -[0m
+[0mGET /api/environments?workspaceId=workspace:8cb458de-6704-4621-b6aa-2a4616ef21d9 [36m304[0m 23.492 ms - -[0m
+[0mGET /api/collections?workspaceId=workspace:8cb458de-6704-4621-b6aa-2a4616ef21d9 [36m304[0m 11.824 ms - -[0m
+[0mGET /api/environments?workspaceId=workspace:8cb458de-6704-4621-b6aa-2a4616ef21d9 [36m304[0m 18.295 ms - -[0m
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+[0mPOST /api/execute [32m200[0m 1453.644 ms - 442[0m
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+[0mGET /api/workspaces [36m304[0m 57.106 ms - -[0m
+Client disconnected
+[0mGET /api/workspaces [36m304[0m 54.553 ms - -[0m
+[0mGET /api/collections?workspaceId=workspace:8cb458de-6704-4621-b6aa-2a4616ef21d9 [36m304[0m 81.712 ms - -[0m
+[0mGET /api/environments?workspaceId=workspace:8cb458de-6704-4621-b6aa-2a4616ef21d9 [36m304[0m 142.266 ms - -[0m
+[0mGET /api/collections?workspaceId=workspace:8cb458de-6704-4621-b6aa-2a4616ef21d9 [36m304[0m 100.153 ms - -[0m
+[0mGET /api/environments?workspaceId=workspace:8cb458de-6704-4621-b6aa-2a4616ef21d9 [36m304[0m 54.722 ms - -[0m
+Client disconnected
+Client disconnected
+Client disconnected
+[0mGET /api/workspaces [36m304[0m 43.244 ms - -[0m
+[0mGET /api/workspaces [36m304[0m 83.593 ms - -[0m
+[0mGET /api/collections?workspaceId=workspace:8cb458de-6704-4621-b6aa-2a4616ef21d9 [36m304[0m 72.125 ms - -[0m
+[0mGET /api/environments?workspaceId=workspace:8cb458de-6704-4621-b6aa-2a4616ef21d9 [36m304[0m 89.754 ms - -[0m
+[0mGET /api/collections?workspaceId=workspace:8cb458de-6704-4621-b6aa-2a4616ef21d9 [36m304[0m 41.465 ms - -[0m
+[0mGET /api/environments?workspaceId=workspace:8cb458de-6704-4621-b6aa-2a4616ef21d9 [36m304[0m 35.743 ms - -[0m
+Client disconnected
+Client disconnected
+[0mGET /api/workspaces [36m304[0m 74.829 ms - -[0m
+[0mGET /api/workspaces [36m304[0m 106.767 ms - -[0m
+[0mGET /api/collections?workspaceId=workspace:8cb458de-6704-4621-b6aa-2a4616ef21d9 [36m304[0m 108.694 ms - -[0m
+[0mGET /api/environments?workspaceId=workspace:8cb458de-6704-4621-b6aa-2a4616ef21d9 [36m304[0m 113.443 ms - -[0m
+[0mGET /api/collections?workspaceId=workspace:8cb458de-6704-4621-b6aa-2a4616ef21d9 [36m304[0m 75.001 ms - -[0m
+[0mGET /api/environments?workspaceId=workspace:8cb458de-6704-4621-b6aa-2a4616ef21d9 [36m304[0m 94.804 ms - -[0m
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+[0mGET /api/workspaces [36m304[0m 45.107 ms - -[0m
+[0mGET /api/workspaces [36m304[0m 36.885 ms - -[0m
+[0mGET /api/collections?workspaceId=workspace:8cb458de-6704-4621-b6aa-2a4616ef21d9 [36m304[0m 23.957 ms - -[0m
+[0mGET /api/environments?workspaceId=workspace:8cb458de-6704-4621-b6aa-2a4616ef21d9 [36m304[0m 46.176 ms - -[0m
+[0mGET /api/environments?workspaceId=workspace:8cb458de-6704-4621-b6aa-2a4616ef21d9 [36m304[0m 44.951 ms - -[0m
+[0mGET /api/collections?workspaceId=workspace:8cb458de-6704-4621-b6aa-2a4616ef21d9 [36m304[0m 42.354 ms - -[0m
+Client disconnected
+Client disconnected
+[0mGET /api/workspaces [36m304[0m 49.323 ms - -[0m
+[0mGET /api/workspaces [36m304[0m 62.186 ms - -[0m
+[0mGET /api/collections?workspaceId=workspace:8cb458de-6704-4621-b6aa-2a4616ef21d9 [36m304[0m 41.785 ms - -[0m
+[0mGET /api/environments?workspaceId=workspace:8cb458de-6704-4621-b6aa-2a4616ef21d9 [36m304[0m 49.718 ms - -[0m
+[0mGET /api/collections?workspaceId=workspace:8cb458de-6704-4621-b6aa-2a4616ef21d9 [36m304[0m 16.724 ms - -[0m
+[0mGET /api/environments?workspaceId=workspace:8cb458de-6704-4621-b6aa-2a4616ef21d9 [36m304[0m 28.935 ms - -[0m
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+[0mGET /api/workspaces [36m304[0m 44.194 ms - -[0m
+[0mGET /api/workspaces [36m304[0m 49.035 ms - -[0m
+[0mGET /api/collections?workspaceId=workspace:8cb458de-6704-4621-b6aa-2a4616ef21d9 [36m304[0m 26.317 ms - -[0m
+[0mGET /api/environments?workspaceId=workspace:8cb458de-6704-4621-b6aa-2a4616ef21d9 [36m304[0m 39.252 ms - -[0m
+[0mGET /api/collections?workspaceId=workspace:8cb458de-6704-4621-b6aa-2a4616ef21d9 [36m304[0m 14.255 ms - -[0m
+[0mGET /api/environments?workspaceId=workspace:8cb458de-6704-4621-b6aa-2a4616ef21d9 [36m304[0m 17.413 ms - -[0m
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+[0mGET /api/health [32m200[0m 0.336 ms - 43[0m
+[0mPOST /api/auth/guest [32m201[0m 451.228 ms - 1136[0m
+[0mPOST /api/auth/guest [32m201[0m 445.476 ms - -[0m
+[0mGET /api/workspaces [33m401[0m 0.304 ms - 45[0m
+[0mGET /api/workspaces [33m401[0m 1.934 ms - 45[0m
+[0mPOST /api/auth/refresh [32m200[0m 20.950 ms - 820[0m
+Client disconnected
+[0mGET /api/workspaces [32m200[0m 51.822 ms - 26[0m
+[0mGET /api/collections?workspaceId=workspace:8cb458de-6704-4621-b6aa-2a4616ef21d9 [36m304[0m 33.476 ms - -[0m
+[0mGET /api/workspaces [36m304[0m 77.172 ms - -[0m
+[0mGET /api/environments?workspaceId=workspace:8cb458de-6704-4621-b6aa-2a4616ef21d9 [36m304[0m 63.381 ms - -[0m
+[0mPOST /api/workspaces [32m201[0m 34.241 ms - 278[0m
+Client disconnected
+[0mGET /api/collections?workspaceId=workspace:ae53ad1e-df51-4ddc-ac2d-e3e82dac816b [32m200[0m 35.015 ms - 26[0m
+[0mGET /api/environments?workspaceId=workspace:ae53ad1e-df51-4ddc-ac2d-e3e82dac816b [32m200[0m 45.311 ms - 26[0m
+[0mGET /api/collections?workspaceId=workspace:ae53ad1e-df51-4ddc-ac2d-e3e82dac816b [36m304[0m 26.279 ms - -[0m
+[0mGET /api/environments?workspaceId=workspace:ae53ad1e-df51-4ddc-ac2d-e3e82dac816b [36m304[0m 43.608 ms - -[0m
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
+Client disconnected
